@@ -1,17 +1,17 @@
-namespace discriminator
+namespace discriminator;
 
 @discriminator("kind")
 union StringDiscriminator {
-    cat: Cat,
-    dog: Dog,
+  cat: Cat,
+  dog: Dog,
 }
 
 model Cat {
-    kind: "cat",
-    meow: boolean,
+  kind: "cat";
+  meow: boolean;
 }
 
 model Dog {
-    kind: "dog",
-    bark: boolean,
+  kind: "dog";
+  bark: boolean;
 }

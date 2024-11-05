@@ -11,47 +11,14 @@ import {
   Union,
   UnionVariant,
 } from "@typespec/compiler";
-import {
-  code,
-  CodeTypeEmitter,
-  Context,
-  EmitterOutput,
-} from "@typespec/compiler/emitter-framework";
 import { pascalCase } from "change-case";
-import {
-  emitHeader,
-  getDoc,
-  getEncodedName,
-  Optional,
-  stripIndent,
-} from "./common.js";
+import { emitHeader, getDoc, getEncodedName, Optional } from "./common.js";
 import { UnionSymbol } from "./union.js";
+import { ModelSymbol } from "./model.js";
+import { SymbolTable } from "./symbol.js";
+import { addBuiltInSymbols, BuiltInSymbol } from "./built-in..js";
 
-
-
-interface ModelPropertyDef {
-  name: string;
-  goName: string;
-  jsonName: string;
-  doc: Optional<string>;
-  type: string;
-}
-
-class ModelSymbol {
-  public readonly kind: "model" = "model";
-  public readonly properties: ModelPropertyDef[] = [];
-
-  public constructor(
-    public name: string,
-    public goName: string,
-  ) {}
-
-  emit(): string {
-    throw new Error("Method not implemented.");
-  }
-}
-
-type Symbol = UnionSymbol | ModelSymbol;
+type Symbol = UnionSymbol | ModelSymbol | BuiltInSymbol;
 
 interface NamespaceDefinition {
   name: string;
@@ -60,28 +27,12 @@ interface NamespaceDefinition {
   symbols: Symbol[];
 }
 
-class SymbolTable {
-  private table: Map<string, Symbol> = new Map();
-
-  push(namespace: string, symbol: Symbol) {
-    const key = `${namespace}/${symbol.name}`;
-    if (this.table.has(key)) {
-      throw new Error(`Duplicate symbol: ${key}`);
-    }
-    this.table.set(key, symbol);
-  }
-
-  find(namespace: string, name: string): Optional<Symbol> {
-    const key = `${namespace}/${name}`;
-    return this.table.get(key);
-  }
-}
-
 export async function $onEmit(context: EmitContext): Promise<void> {
   const { program } = context;
   const builtInNamespaces = ["", "TypeSpec", "Reflection"];
   const namespaces = new Map<string, NamespaceDefinition>();
-  const symbolTable = new SymbolTable();
+  const symbolTable = new SymbolTable<Symbol>();
+  addBuiltInSymbols(symbolTable);
 
   navigateProgram(program, {
     namespace: (namespace: Namespace) => {
@@ -108,7 +59,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     goName: string;
     jsonName: string;
     doc: Optional<string>;
-    type: Optional<string>;
+    type: Optional<() => Symbol>;
     model: ModelSymbol;
   }
   interface ModelScope {
@@ -121,16 +72,22 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     const scopes: Scope[] = [];
     navigateTypesInNamespace(namespace.typespecDefinition, {
       model: (model: Model) => {
-        const goName =
-          getEncodedName(model, "text/x-go") || pascalCase(model.name);
+        const goName = getEncodedName(model, "text/x-go") || pascalCase(model.name);
+        const doc = getDoc(model);
         scopes.push({
           kind: "model",
-          symbol: new ModelSymbol(model.name, goName),
+          symbol: new ModelSymbol(model.name, model.namespace?.name, goName, doc),
         });
         console.log(`Model ${model.name}: Start`);
       },
       exitModel: (model: Model) => {
-        scopes.pop();
+        const modelScope = scopes.pop();
+        if (modelScope?.kind !== "model") {
+          throw new Error("Expected model scope");
+        }
+        const { symbol } = modelScope;
+        namespace.symbols.push(symbol);
+        symbolTable.push(symbol);
         console.log(`Model ${model.name}: End`);
       },
       modelProperty: (property: ModelProperty) => {
@@ -139,11 +96,23 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           throw new Error("Expected model scope");
         }
         const doc = getDoc(property);
-        const goName =
-          getEncodedName(property, "text/x-go") || pascalCase(property.name);
-        const jsonName =
-          getEncodedName(property, "application/json") || property.name;
+        const goName = getEncodedName(property, "text/x-go") || pascalCase(property.name);
+        const jsonName = getEncodedName(property, "application/json") || property.name;
 
+        const { type } = property;
+
+        if (type.kind === "Scalar" || type.kind === "Model") {
+          scopes.push({
+            kind: "property",
+            name: property.name,
+            doc,
+            type: symbolTable.deferResolve(type.name, type.namespace?.name),
+            goName,
+            jsonName,
+            model: parentScope.symbol,
+          });
+          return;
+        }
         scopes.push({
           kind: "property",
           name: property.name,
@@ -154,7 +123,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           model: parentScope.symbol,
         });
       },
-      exitModelProperty: (_: ModelProperty) => {
+      exitModelProperty: (modelProperty: ModelProperty) => {
         const propertyScope = scopes.pop();
         if (propertyScope?.kind !== "property") {
           throw new Error("Expected property scope");
@@ -172,6 +141,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           type: propertyScope.type,
         });
       },
+
       union: (union: Union) => {
         const [unionName, goName, anonymous] = (() => {
           if (union.name === undefined) {
@@ -186,15 +156,14 @@ export async function $onEmit(context: EmitContext): Promise<void> {
               throw new Error("Anonymous union not contained in a property");
             }
           } else {
-            const goName =
-              getEncodedName(union, "text/x-go") || pascalCase(union.name);
+            const goName = getEncodedName(union, "text/x-go") || pascalCase(union.name);
             return [union.name, goName, false];
           }
         })();
         const doc = getDoc(union);
         scopes.push({
           kind: "union",
-          symbol: new UnionSymbol(unionName, goName, doc, anonymous),
+          symbol: new UnionSymbol(unionName, union.namespace?.name, goName, doc, anonymous),
         });
       },
       exitUnion: (_: Union) => {
@@ -209,13 +178,13 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         // const symbol: Symbol = { kind: "union", name: unionScope.name, goName: unionScope.goName, definition: emitUnion(unionScope.name, unionScope.doc, unionScope.type, unionScope.variants) };
         /* TODO: combine namespace and symbolTable */
         namespace.symbols.push(symbol);
-        symbolTable.push(namespace.name, symbol);
+        symbolTable.push(symbol);
         if (symbol.anonymous) {
           const parentScope = scopes[scopes.length - 1];
           if (parentScope.kind !== "property") {
             throw new Error("Expected property scope");
           }
-          parentScope.type = symbol.name;
+          parentScope.type = symbolTable.deferResolve(symbol.name, symbol.namespace);
         }
       },
       unionVariant: (variant: UnionVariant) => {
@@ -227,8 +196,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         const doc = getDoc(variant);
         const goName = getEncodedName(variant, "text/x-go");
         if (type.kind === "String") {
-          const variantName =
-            typeof variant.name === "string" ? variant.name : type.value;
+          const variantName = typeof variant.name === "string" ? variant.name : type.value;
           if (parentScope.symbol.type === undefined) {
             parentScope.symbol.type = "string";
           } else if (parentScope.symbol.type !== "string") {
@@ -241,16 +209,10 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             value: `"${type.value}"`,
           });
         } else if (type.kind === "Number") {
-          const variantName =
-            typeof variant.name === "string"
-              ? variant.name
-              : type.valueAsString;
+          const variantName = typeof variant.name === "string" ? variant.name : type.valueAsString;
           if (parentScope.symbol.type === undefined) {
             parentScope.symbol.type = "int64";
-          } else if (
-            parentScope.symbol.type !== "int32" &&
-            parentScope.symbol.type !== "int64"
-          ) {
+          } else if (parentScope.symbol.type !== "int32" && parentScope.symbol.type !== "int64") {
             throw new Error("Union must contain only one scalar type");
           }
           parentScope.symbol.variants.push({
@@ -283,15 +245,15 @@ export async function $onEmit(context: EmitContext): Promise<void> {
 
   for (const namespace of namespaces.values()) {
     const namespaceFile = `${context.emitterOutputDir}/${namespace.goName}/models.go`;
-    await program.host.mkdirp(
-      `${context.emitterOutputDir}/${namespace.goName}`,
-    );
+    await program.host.mkdirp(`${context.emitterOutputDir}/${namespace.goName}`);
+
+    const shouldEmit = (s: Symbol): s is UnionSymbol | ModelSymbol => ["model", "union"].includes(s.kind);
 
     await program.host.writeFile(
       namespaceFile,
       emitHeader(namespace.goName, ["encoding/json"]) +
         namespace.symbols
-          .filter((s) => ["model", "union"].includes(s.kind))
+          .filter(shouldEmit)
           .map((s) => s.emit())
           .join("\n\n"),
     );

@@ -9,27 +9,27 @@ type Dog struct {
 	Age  int64
 }
 
-func (f *Dog) UnmarshalJSON(data []byte) error {
+func (m *Dog) UnmarshalJSON(data []byte) error {
 	var rawMsg map[string]json.RawMessage
 	if err := json.Unmarshal(data, &rawMsg); err != nil {
 		return err
 	}
 	if v, ok := rawMsg["name"]; ok {
-		if err := json.Unmarshal(v, &f.Name); err != nil {
+		if err := json.Unmarshal(v, &m.Name); err != nil {
 			return err
 		}
 	}
 	if v, ok := rawMsg["age"]; ok {
-		if err := json.Unmarshal(v, &f.Age); err != nil {
+		if err := json.Unmarshal(v, &m.Age); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (f Dog) MarshalJSON() ([]byte, error) {
+func (m Dog) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]interface{}{
-		"name": f.Name,
-		"age":  f.Age,
+		"name": m.Name,
+		"age":  m.Age,
 	})
 }

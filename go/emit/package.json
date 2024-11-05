@@ -21,8 +21,9 @@
     "@types/node": "latest",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "@typespec/prettier-plugin-typespec": "^0.62.0",
     "eslint": "^8.45.0",
-    "prettier": "^3.0.3",
+    "prettier": "^3.3.3",
     "typescript": "^5.3.3",
     "vitest": "^2.1.4"
   },
@@ -32,7 +33,7 @@
     "test": "vitest",
     "lint": "eslint src/ test/ --report-unused-disable-directives --max-warnings=0",
     "lint:fix": "eslint . --report-unused-disable-directives --fix",
-    "format": "prettier .  --write",
+    "format": "prettier . --write",
     "format:check": "prettier --check ."
   },
   "private": true

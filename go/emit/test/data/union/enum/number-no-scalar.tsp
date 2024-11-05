@@ -1,6 +1,6 @@
 namespace mynamespace;
 
 union NumberNoScalar {
-    variant1: 4,
-    variant2: 2,
+  variant1: 4,
+  variant2: 2,
 }

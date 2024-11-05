@@ -1,12 +1,7 @@
 import { DecoratorApplication, DecoratorArgument, Scalar } from "@typespec/compiler";
 
-export function stripIndent(
-  strings: TemplateStringsArray,
-  ...values: any[]
-): string {
-  const fullString = strings
-    .reduce((acc, str, i) => acc + str + (values[i] || ""), "")
-    .replace(/^\n+/g, "");
+export function stripIndent(strings: TemplateStringsArray, ...values: any[]): string {
+  const fullString = strings.reduce((acc, str, i) => acc + str + (values[i] || ""), "").replace(/^\n+/g, "");
 
   const match = fullString.match(/^[ \t]*(?=\S)/gm);
   if (!match) return fullString;
@@ -36,13 +31,8 @@ interface Decorated {
   decorators: DecoratorApplication[];
 }
 
-function getDecoratorArgs(
-  element: Decorated,
-  decoratorName: string,
-): DecoratorArgument[][] {
-  return element.decorators
-    .filter((d) => d.definition?.name === decoratorName)
-    .map((d) => d.args);
+function getDecoratorArgs(element: Decorated, decoratorName: string): DecoratorArgument[][] {
+  return element.decorators.filter((d) => d.definition?.name === decoratorName).map((d) => d.args);
 }
 
 function getDecoratorArg(
@@ -58,18 +48,11 @@ function getDecoratorArg(
 }
 
 export function getDoc(element: Decorated): Optional<string> {
-  const docDecorator = getDecoratorArg(
-    element,
-    "@doc",
-    (args) => args.length === 1,
-  );
+  const docDecorator = getDecoratorArg(element, "@doc", (args) => args.length === 1);
   return docDecorator?.at(0)?.jsValue?.toString();
 }
 
-export function getEncodedName(
-  element: Decorated,
-  mimeType: string,
-): Optional<string> {
+export function getEncodedName(element: Decorated, mimeType: string): Optional<string> {
   const encodedName = getDecoratorArg(
     element,
     "@encodedName",
@@ -77,27 +60,3 @@ export function getEncodedName(
   );
   return encodedName?.at(1)?.jsValue as Optional<string>;
 }
-
-
-function mapScalarToGoType(scalar: Scalar): string {
-    const scalarMap: Record<string, string> = {
-      string: "string",
-      int32: "int32",
-      int64: "int64",
-      integer: "int64",
-      float32: "float32",
-      float64: "float64",
-      boolean: "bool",
-      date: "time.Time",
-      datetime: "time.Time",
-      duration: "time.Duration",
-      uuid: "string",
-      url: "string",
-      email: "string",
-    };
-    if (scalarMap[scalar.name] === undefined) {
-      throw new Error(`Unsupported scalar type: ${scalar.name}`);
-    }
-
-    return scalarMap[scalar.name];
-  }

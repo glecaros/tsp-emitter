@@ -1,14 +1,10 @@
 import { Optional, stripIndent } from "./common.js";
+import { BaseSymbol } from "./symbol.js";
 
-function emitUnion(
-  name: string,
-  doc: Optional<string>,
-  type: string,
-  variants: UnionVariantDef[],
-): string {
-    const variantName = (v: UnionVariantDef) => {
-        return `${name}${v.goName}`;
-    }
+function emitUnion(name: string, doc: Optional<string>, type: string, variants: UnionVariantDef[]): string {
+  const variantName = (v: UnionVariantDef) => {
+    return `${name}${v.goName}`;
+  };
   return stripIndent`
       ${doc !== undefined ? `// ${name} ${doc}` : ""}
       type ${name} ${type}
@@ -41,30 +37,30 @@ function emitUnion(
       }`;
 }
 
-
 export interface UnionVariantDef {
-    name: string;
-    goName: string;
-    doc: Optional<string>;
-    value: string;
-  }
+  name: string;
+  goName: string;
+  doc: Optional<string>;
+  value: string;
+}
 
-  export class UnionSymbol {
-    public readonly kind: "union" = "union";
-    public type: Optional<string> = undefined;
-    public readonly variants: UnionVariantDef[] = [];
+export class UnionSymbol implements BaseSymbol {
+  public readonly kind: "union" = "union";
+  public type: Optional<string> = undefined;
+  public readonly variants: UnionVariantDef[] = [];
 
-    public constructor(
-      public name: string,
-      public goName: Optional<string>,
-      public doc: Optional<string>,
-      public anonymous: boolean,
-    ) {}
+  public constructor(
+    public name: string,
+    public namespace: Optional<string>,
+    public goName: string,
+    public doc: Optional<string>,
+    public anonymous: boolean,
+  ) {}
 
-    emit(): string {
-      if (this.type === undefined) {
-        throw new Error("Union type not defined");
-      }
-      return emitUnion(this.name, this.doc, this.type, this.variants);
+  emit(): string {
+    if (this.type === undefined) {
+      throw new Error("Union type not defined");
     }
+    return emitUnion(this.name, this.doc, this.type, this.variants);
   }
+}

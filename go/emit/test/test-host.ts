@@ -1,9 +1,5 @@
 import { CompilerHost, Diagnostic, resolvePath } from "@typespec/compiler";
-import {
-  createTestHost,
-  createTestWrapper,
-  expectDiagnosticEmpty,
-} from "@typespec/compiler/testing";
+import { createTestHost, createTestWrapper, expectDiagnosticEmpty } from "@typespec/compiler/testing";
 import { GoEmitterTestLibrary } from "../src/testing/index.js";
 
 export async function createGoEmitterTestHost() {
@@ -23,10 +19,7 @@ export async function createGoEmitterTestRunner() {
   });
 }
 
-async function readDir(
-  host: CompilerHost,
-  directory: string,
-): Promise<Record<string, string>> {
+async function readDir(host: CompilerHost, directory: string): Promise<Record<string, string>> {
   const files = await host.readDir(directory);
   const result: Record<string, string> = {};
   for (const file of files) {
@@ -43,9 +36,7 @@ async function readDir(
   return result;
 }
 
-export async function emitWithDiagnostics(
-  code: string,
-): Promise<[Record<string, string>, readonly Diagnostic[]]> {
+export async function emitWithDiagnostics(code: string): Promise<[Record<string, string>, readonly Diagnostic[]]> {
   const runner = await createGoEmitterTestRunner();
   await runner.compileAndDiagnose(code, {
     outputDir: "tsp-output",
