@@ -1,17 +1,14 @@
 import { Optional, stripIndent } from "./common.js";
 
-interface UnionVariantInfo {
-  name: string;
-  doc: Optional<string>;
-  value: string;
-}
-
-export function emitUnion(
+function emitUnion(
   name: string,
   doc: Optional<string>,
   type: string,
-  variants: UnionVariantInfo[],
+  variants: UnionVariantDef[],
 ): string {
+    const variantName = (v: UnionVariantDef) => {
+        return `${name}${v.goName}`;
+    }
   return stripIndent`
       ${doc !== undefined ? `// ${name} ${doc}` : ""}
       type ${name} ${type}
@@ -20,10 +17,10 @@ export function emitUnion(
         .map((v) =>
           v.doc !== undefined
             ? `
-        // ${v.name} ${v.doc}`
+        // ${variantName(v)} ${v.doc}`
             : "" +
               `
-        ${v.name} ${name} = ${v.value}`,
+        ${variantName(v)} ${name} = ${v.value}`,
         )
         .join("")}
       )
@@ -43,3 +40,31 @@ export function emitUnion(
         return json.Marshal(f)
       }`;
 }
+
+
+export interface UnionVariantDef {
+    name: string;
+    goName: string;
+    doc: Optional<string>;
+    value: string;
+  }
+
+  export class UnionSymbol {
+    public readonly kind: "union" = "union";
+    public type: Optional<string> = undefined;
+    public readonly variants: UnionVariantDef[] = [];
+
+    public constructor(
+      public name: string,
+      public goName: Optional<string>,
+      public doc: Optional<string>,
+      public anonymous: boolean,
+    ) {}
+
+    emit(): string {
+      if (this.type === undefined) {
+        throw new Error("Union type not defined");
+      }
+      return emitUnion(this.name, this.doc, this.type, this.variants);
+    }
+  }

@@ -1,4 +1,4 @@
-import { DecoratorApplication, DecoratorArgument } from "@typespec/compiler";
+import { DecoratorApplication, DecoratorArgument, Scalar } from "@typespec/compiler";
 
 export function stripIndent(
   strings: TemplateStringsArray,
@@ -19,7 +19,7 @@ export function stripIndent(
 
 export function emitHeader(packageName: string, imports: string[]): string {
   return stripIndent`
-        package ${packageName};
+        package ${packageName}
         ${imports
           .map(
             (i) => `
@@ -77,3 +77,27 @@ export function getEncodedName(
   );
   return encodedName?.at(1)?.jsValue as Optional<string>;
 }
+
+
+function mapScalarToGoType(scalar: Scalar): string {
+    const scalarMap: Record<string, string> = {
+      string: "string",
+      int32: "int32",
+      int64: "int64",
+      integer: "int64",
+      float32: "float32",
+      float64: "float64",
+      boolean: "bool",
+      date: "time.Time",
+      datetime: "time.Time",
+      duration: "time.Duration",
+      uuid: "string",
+      url: "string",
+      email: "string",
+    };
+    if (scalarMap[scalar.name] === undefined) {
+      throw new Error(`Unsupported scalar type: ${scalar.name}`);
+    }
+
+    return scalarMap[scalar.name];
+  }

@@ -25,34 +25,9 @@ import {
   Optional,
   stripIndent,
 } from "./common.js";
-import { emitUnion } from "./union.js";
+import { UnionSymbol } from "./union.js";
 
-interface UnionVariantDef {
-  name: string;
-  goName: Optional<string>;
-  doc: Optional<string>;
-  value: string;
-}
 
-class UnionSymbol {
-  public readonly kind: "union" = "union";
-  public type: Optional<string> = undefined;
-  public readonly variants: UnionVariantDef[] = [];
-
-  public constructor(
-    public name: string,
-    public goName: Optional<string>,
-    public doc: Optional<string>,
-    public anonymous: boolean,
-  ) {}
-
-  emit(): string {
-    if (this.type === undefined) {
-      throw new Error("Union type not defined");
-    }
-    return emitUnion(this.name, this.doc, this.type, this.variants);
-  }
-}
 
 interface ModelPropertyDef {
   name: string;
@@ -261,7 +236,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           }
           parentScope.symbol.variants.push({
             name: variantName,
-            goName,
+            goName: goName || pascalCase(variantName),
             doc,
             value: `"${type.value}"`,
           });
@@ -280,7 +255,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           }
           parentScope.symbol.variants.push({
             name: variantName,
-            goName,
+            goName: goName || pascalCase(variantName),
             doc,
             value: type.valueAsString,
           });
@@ -332,154 +307,4 @@ export async function $onEmit(context: EmitContext): Promise<void> {
   // program.resolveTypeReference()
   // assetEmitter.emitProgram();
   // return await assetEmitter.writeOutput();
-}
-
-class GoEmitter extends CodeTypeEmitter {
-  // constructor(private program: Program) {}
-
-  // async emit(): Promise<void> {
-  //   // Process all types in the program
-  //   for (const type of this.program.types.getTypes()) {
-  //     if (type instanceof Model) {
-  //       this.emitModel(type);
-  //     } else if (type instanceof Enum) {
-  //       this.emitEnum(type);
-  //     } else if (type instanceof Interface) {
-  //       this.emitInterface(type);
-  //     }
-  //   }
-  //   return this.output;
-  // }
-  programContext(program: Program): Context {
-    const sourceFile = this.emitter.createSourceFile("test.go");
-    this.emitter.emitSourceFile;
-    return {
-      scope: sourceFile.globalScope,
-    };
-  }
-
-  modelDeclaration(model: Model, name: string): EmitterOutput<string> {
-    const props = this.emitter.emitModelProperties(model);
-    return this.emitter.result.declaration(
-      name,
-      code`type ${name} struct {\n ${props} \n}`,
-    );
-  }
-
-  modelPropertyLiteral(property: ModelProperty): EmitterOutput<string> {
-    const doc = this.getDoc(property);
-    const type = this.emitter.emitType(property.type);
-    return code`${property.name} ${type} \`json:"${property.name},omitempty"\`\n`;
-  }
-
-  private mapScalarToGoType(scalar: Scalar): string {
-    const scalarMap: Record<string, string> = {
-      string: "string",
-      int32: "int32",
-      int64: "int64",
-      integer: "int64",
-      float32: "float32",
-      float64: "float64",
-      boolean: "bool",
-      date: "time.Time",
-      datetime: "time.Time",
-      duration: "time.Duration",
-      uuid: "string",
-      url: "string",
-      email: "string",
-    };
-    if (scalarMap[scalar.name] === undefined) {
-      throw new Error(`Unsupported scalar type: ${scalar.name}`);
-    }
-
-    return scalarMap[scalar.name];
-  }
-
-  scalarDeclaration(scalar: Scalar, _name: string): EmitterOutput<string> {
-    console.log("scalar");
-    this.emitter.getContext()["scalar"] = scalar;
-    return this.mapScalarToGoType(scalar);
-  }
-
-  private getDoc(element: Union | ModelProperty): string | undefined {
-    const docDecorator = element.decorators.find(
-      (d) => d.definition?.name === "@doc",
-    );
-    return docDecorator?.args[0].jsValue?.toString();
-  }
-
-  unionDeclaration(union: Union, name: string): EmitterOutput<string> {
-    const doc = this.getDoc(union);
-    let scalar;
-    let values = [];
-    for (const entry of union.variants.entries()) {
-      if (entry[1].type.kind === "Scalar") {
-        scalar = this.mapScalarToGoType(entry[1].type);
-        continue;
-      }
-      const variantName = pascalCase(entry[0].toString());
-      const variant = entry[1];
-      if (variant.type.kind === "String") {
-        if (scalar === undefined) {
-          scalar = "string";
-        } else if (scalar !== "string") {
-          throw new Error("Unions must contain only one scalar type");
-        }
-        values.push(
-          code`${name}${variantName} ${name} = "${variant.type.value}"`,
-        );
-      } else if (variant.type.kind === "Number") {
-        if (scalar === undefined) {
-          scalar = "int64";
-        } else if (scalar !== "int32" && scalar !== "int64") {
-          throw new Error("Unions must contain only one scalar type");
-        }
-        values.push(
-          code`${name}${variantName} ${name} = ${variant.type.valueAsString}`,
-        );
-      } else {
-        throw new Error("Unions must contain only numbers or strings");
-      }
-    }
-    if (scalar === undefined) {
-      throw new Error("Union must contain a scalar type");
-    }
-
-    return this.emitter.result.declaration(
-      name,
-      code`
-      ${doc !== undefined ? `// ${name} ${doc}` : ""}
-      type ${name} ${scalar}
-
-      const (
-        ${values.join("\n")}
-    )
-
-      func (f  *${name}) UnmarshalJSON(data []byte) error {
-        var v ${scalar}
-        if err := json.Unmarshal(data, &v); err != nil {
-          return err
-        }
-        *f = ${name}(v)
-        return nil
-      }
-
-      func (f ${name}) MarshalJSON() ([]byte, error) {
-        return json.Marshal(f)
-      }`,
-    );
-  }
-
-  // unionVariant(variant: UnionVariant): EmitterOutput<UnionVariantRepr> {
-  //   console.log(variant.name);
-  //   console.log(variant.type);
-  //   console.log(variant.kind);
-  //   return "variant";
-  // }
-}
-
-interface UnionVariantRepr {
-  name: string;
-  type: string;
-  value: string;
 }
