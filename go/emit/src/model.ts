@@ -1,12 +1,39 @@
 import { Optional, stripIndent } from "./common.js";
 import { BaseSymbol } from "./symbol.js";
 
+export type ConstantValue = BooleanValue | StringValue | NumberValue;
+
+export interface BooleanValue {
+  type: "boolean";
+  value: boolean;
+}
+
+export interface StringValue {
+  type: "string";
+  value: string;
+}
+
+export interface NumberValue {
+  type: "number";
+  value: number;
+}
+
+function valueToGo(value: ConstantValue): string {
+  if (value.type === "boolean" || value.type === "number") {
+    return `${value.value}`;
+  } else {
+    return `"${value.value}"`;
+  }
+}
+
 export interface ModelPropertyDef {
   name: string;
   goName: string;
   jsonName: string;
   doc: Optional<string>;
   type: BaseSymbol;
+  isConstant: boolean;
+  value: Optional<ConstantValue>;
 }
 
 export class ModelSymbol implements BaseSymbol {
@@ -56,7 +83,7 @@ export class ModelSymbol implements BaseSymbol {
                 return json.Marshal(map[string]interface{}{${this.properties
                   .map(
                     (m) => `
-                    "${m.name}": m.${m.goName},`,
+                    "${m.name}": ${m.isConstant ? valueToGo(m.value!) : `m.${m.goName}`},`,
                   )
                   .join("")}
                 })

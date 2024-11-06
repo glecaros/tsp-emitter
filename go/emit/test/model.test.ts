@@ -16,4 +16,10 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles models with constant fields", async () => {
+    const [input, expected] = await getTestData("with-constant-fields");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });

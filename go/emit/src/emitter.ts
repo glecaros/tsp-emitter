@@ -14,7 +14,7 @@ import {
 import { pascalCase } from "change-case";
 import { emitHeader, getDoc, getEncodedName, Optional } from "./common.js";
 import { UnionSymbol } from "./union.js";
-import { ModelSymbol } from "./model.js";
+import { ConstantValue, ModelSymbol } from "./model.js";
 import { SymbolTable } from "./symbol.js";
 import { addBuiltInSymbols, BuiltInSymbol } from "./built-in..js";
 
@@ -62,11 +62,21 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     type: Optional<() => Optional<Symbol>>;
     model: ModelSymbol;
   }
+  interface ConstantPropertyScope {
+    kind: "constant-property";
+    name: string;
+    goName: string;
+    jsonName: string;
+    doc: Optional<string>;
+    type: Symbol;
+    value: ConstantValue;
+    model: ModelSymbol;
+  }
   interface ModelScope {
     kind: "model";
     symbol: ModelSymbol;
   }
-  type Scope = UnionScope | PropertyScope | ModelScope;
+  type Scope = UnionScope | PropertyScope | ConstantPropertyScope | ModelScope;
 
   for (const namespace of namespaces.values()) {
     const scopes: Scope[] = [];
@@ -112,38 +122,91 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             model: parentScope.symbol,
           });
           return;
+        } else if (type.kind === "Boolean" || type.kind === "String" || type.kind === "Number") {
+          const [typeName, value] = ((): [string, ConstantValue] => {
+            if (type.kind === "Boolean") {
+              return [
+                "boolean",
+                {
+                  type: "boolean",
+                  value: type.value,
+                },
+              ];
+            } else if (type.kind === "String") {
+              return [
+                "string",
+                {
+                  type: "string",
+                  value: type.value,
+                },
+              ];
+            } else {
+              return [
+                "numeric",
+                {
+                  type: "number",
+                  value: type.value,
+                },
+              ];
+            }
+          })();
+          scopes.push({
+            kind: "constant-property",
+            name: property.name,
+            doc,
+            type: symbolTable.find(typeName, "TypeSpec")!,
+            goName,
+            jsonName,
+            value,
+            model: parentScope.symbol,
+          });
+        } else {
+          scopes.push({
+            kind: "property",
+            name: property.name,
+            doc,
+            type: undefined,
+            goName,
+            jsonName,
+            model: parentScope.symbol,
+          });
         }
-        scopes.push({
-          kind: "property",
-          name: property.name,
-          doc,
-          type: undefined,
-          goName,
-          jsonName,
-          model: parentScope.symbol,
-        });
       },
       exitModelProperty: (_: ModelProperty) => {
         const propertyScope = scopes.pop();
-        if (propertyScope?.kind !== "property") {
+        if (propertyScope?.kind === "property") {
+          const { name, goName, jsonName, doc, model } = propertyScope;
+          if (propertyScope.type === undefined) {
+            throw new Error("Property type not defined");
+          }
+          const type = propertyScope.type();
+          if (type === undefined) {
+            throw new Error(`Could not resolve type of property ${name}  of model ${model.name}.`);
+          }
+
+          propertyScope.model.properties.push({
+            name,
+            goName,
+            jsonName,
+            doc,
+            type,
+            isConstant: false,
+            value: undefined,
+          });
+        } else if (propertyScope?.kind === "constant-property") {
+          const { name, goName, jsonName, doc, type, value } = propertyScope;
+          propertyScope.model.properties.push({
+            name,
+            goName,
+            jsonName,
+            doc,
+            type,
+            isConstant: true,
+            value,
+          });
+        } else {
           throw new Error("Expected property scope");
         }
-        const { name, goName, jsonName, doc, model } = propertyScope;
-        if (propertyScope.type === undefined) {
-          throw new Error("Property type not defined");
-        }
-        const type = propertyScope.type();
-        if (type === undefined) {
-          throw new Error(`Could not resolve type of property ${name}  of model ${model.name}.`);
-        }
-
-        propertyScope.model.properties.push({
-          name,
-          goName,
-          jsonName,
-          doc,
-          type: type,
-        });
       },
 
       union: (union: Union) => {
