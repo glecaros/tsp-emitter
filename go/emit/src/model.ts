@@ -51,7 +51,7 @@ export class ModelSymbol implements BaseSymbol {
   emit(): string {
     return stripIndent`
             ${this.doc !== undefined ? `// ${this.goName} ${this.doc}"}` : ""}
-            type ${this.goName} struct {${this.properties
+            type ${this.goName} struct {${this.properties.filter(m => !m.isConstant)
               .map((m) =>
                 m.doc !== undefined
                   ? `
@@ -61,13 +61,18 @@ export class ModelSymbol implements BaseSymbol {
                 ${m.goName} ${m.optional ? "*" : "" }${m.type.goName}`,
               )
               .join("")}
-            }
+            }${this.properties.filter(m => m.isConstant).map(m => `
+
+            func (m ${this.goName}) ${m.goName}() ${m.type.goName} {
+                return ${valueToGo(m.value!)}
+            }`).join("")}
 
             func (m *${this.goName})  UnmarshalJSON(data []byte) error {
                 var rawMsg map[string]json.RawMessage
                 if err := json.Unmarshal(data, &rawMsg); err != nil {
                     return err
                 }${this.properties
+                    .filter(m => !m.isConstant)
                   .map(
                     (m) => `
                 if v, ok := rawMsg["${m.name}"]; ok {
