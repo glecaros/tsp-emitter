@@ -59,6 +59,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     goName: string;
     jsonName: string;
     doc: Optional<string>;
+    optional: boolean;
     type: Optional<() => Optional<Symbol>>;
     model: ModelSymbol;
   }
@@ -109,7 +110,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         const goName = getEncodedName(property, "text/x-go") || pascalCase(property.name);
         const jsonName = getEncodedName(property, "application/json") || property.name;
 
-        const { type } = property;
+        const { type, optional } = property;
 
         if (type.kind === "Scalar" || type.kind === "Model") {
           scopes.push({
@@ -119,6 +120,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             type: symbolTable.deferResolve(type.name, type.namespace?.name),
             goName,
             jsonName,
+            optional,
             model: parentScope.symbol,
           });
           return;
@@ -168,6 +170,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             type: undefined,
             goName,
             jsonName,
+            optional,
             model: parentScope.symbol,
           });
         }
@@ -175,7 +178,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
       exitModelProperty: (_: ModelProperty) => {
         const propertyScope = scopes.pop();
         if (propertyScope?.kind === "property") {
-          const { name, goName, jsonName, doc, model } = propertyScope;
+          const { name, goName, jsonName, doc, model, optional } = propertyScope;
           if (propertyScope.type === undefined) {
             throw new Error("Property type not defined");
           }
@@ -190,6 +193,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             jsonName,
             doc,
             type,
+            optional,
             isConstant: false,
             value: undefined,
           });
@@ -201,6 +205,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             jsonName,
             doc,
             type,
+            optional: false,
             isConstant: true,
             value,
           });

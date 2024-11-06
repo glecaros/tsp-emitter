@@ -1,6 +1,6 @@
 namespace modeltest;
 
-model Dog {
+model Cat {
   name: string;
   nickname?: string;
 }

@@ -32,6 +32,7 @@ export interface ModelPropertyDef {
   jsonName: string;
   doc: Optional<string>;
   type: BaseSymbol;
+  optional: boolean;
   isConstant: boolean;
   value: Optional<ConstantValue>;
 }
@@ -57,7 +58,7 @@ export class ModelSymbol implements BaseSymbol {
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.type.goName}`,
+                ${m.goName} ${m.optional ? "*" : "" }${m.type.goName}`,
               )
               .join("")}
             }
