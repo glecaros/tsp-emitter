@@ -2,7 +2,7 @@ namespace modeltest;
 
 model SmallDog {
   name: string;
-  age: number;
+  age: numeric;
   isSmall: true;
   Size: "small";
 }

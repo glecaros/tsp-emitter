@@ -27,14 +27,8 @@ export class SymbolTable<T extends BaseSymbol> {
     return this.table.get(key);
   }
 
-  deferResolve(name: string, namespace: Optional<string>): () => T {
+  deferResolve(name: string, namespace: Optional<string>): () => Optional<T> {
     const self = this;
-    return () => {
-      const resolved = self.find(name, namespace);
-      if (resolved === undefined) {
-        throw new Error(`Could not resolve symbol ${name}`);
-      }
-      return resolved;
-    };
+    return () => self.find(name, namespace);
   }
 }

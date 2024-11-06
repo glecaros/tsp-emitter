@@ -59,7 +59,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     goName: string;
     jsonName: string;
     doc: Optional<string>;
-    type: Optional<() => Symbol>;
+    type: Optional<() => Optional<Symbol>>;
     model: ModelSymbol;
   }
   interface ModelScope {
@@ -123,14 +123,18 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           model: parentScope.symbol,
         });
       },
-      exitModelProperty: (modelProperty: ModelProperty) => {
+      exitModelProperty: (_: ModelProperty) => {
         const propertyScope = scopes.pop();
         if (propertyScope?.kind !== "property") {
           throw new Error("Expected property scope");
         }
-        const { name, goName, jsonName, doc } = propertyScope;
+        const { name, goName, jsonName, doc, model } = propertyScope;
         if (propertyScope.type === undefined) {
           throw new Error("Property type not defined");
+        }
+        const type = propertyScope.type();
+        if (type === undefined) {
+          throw new Error(`Could not resolve type of property ${name}  of model ${model.name}.`);
         }
 
         propertyScope.model.properties.push({
@@ -138,7 +142,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           goName,
           jsonName,
           doc,
-          type: propertyScope.type,
+          type: type,
         });
       },
 

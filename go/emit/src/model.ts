@@ -6,7 +6,7 @@ export interface ModelPropertyDef {
   goName: string;
   jsonName: string;
   doc: Optional<string>;
-  type: () => BaseSymbol;
+  type: BaseSymbol;
 }
 
 export class ModelSymbol implements BaseSymbol {
@@ -30,7 +30,7 @@ export class ModelSymbol implements BaseSymbol {
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.type().goName}`,
+                ${m.goName} ${m.type.goName}`,
               )
               .join("")}
             }

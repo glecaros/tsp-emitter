@@ -15,5 +15,5 @@ describe("model generation", () => {
     const [input, expected] = await getTestData("references");
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
-  })
+  });
 });
