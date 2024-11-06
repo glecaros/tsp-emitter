@@ -1,4 +1,5 @@
 namespace modeltest;
+
 model Home {
   dog: Dog;
 }

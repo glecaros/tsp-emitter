@@ -1,6 +1,6 @@
 namespace modeltest;
 
-model Dog {
+model Pet {
   name: string;
   age: integer;
 }
