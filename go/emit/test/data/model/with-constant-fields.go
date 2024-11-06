@@ -39,10 +39,12 @@ func (m *SmallDog) UnmarshalJSON(data []byte) error {
 }
 
 func (m SmallDog) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
+	obj := map[string]interface{}{
 		"name":    m.Name,
 		"age":     m.Age,
 		"isSmall": true,
 		"size":    "small",
-	})
+	}
+
+	return json.Marshal(obj)
 }

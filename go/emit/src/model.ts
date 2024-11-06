@@ -81,13 +81,15 @@ export class ModelSymbol implements BaseSymbol {
             }
 
             func (m ${this.goName}) MarshalJSON() ([]byte, error) {
-                return json.Marshal(map[string]interface{}{${this.properties
-                  .map(
-                    (m) => `
-                    "${m.name}": ${m.isConstant ? valueToGo(m.value!) : `m.${m.goName}`},`,
-                  )
-                  .join("")}
-                })
+                obj := map[string]interface{}{${this.properties.filter(m => !m.optional).map(m => `
+                    "${m.jsonName}": ${m.isConstant ? valueToGo(m.value!) : `m.${m.goName}`},`).join("")}
+                }
+                ${this.properties.filter(m => m.optional).map(m => `
+                if m.${m.goName} != nil {
+                    obj["${m.jsonName}"] = m.${m.goName}
+                }`).join("")}
+
+                return json.Marshal(obj)
             }`;
   }
 }

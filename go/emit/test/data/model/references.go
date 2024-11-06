@@ -27,10 +27,12 @@ func (m *Dog) UnmarshalJSON(data []byte) error {
 }
 
 func (m Dog) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
+	obj := map[string]interface{}{
 		"name": m.Name,
 		"age":  m.Age,
-	})
+	}
+
+	return json.Marshal(obj)
 }
 
 type Home struct {
@@ -51,7 +53,9 @@ func (m *Home) UnmarshalJSON(data []byte) error {
 }
 
 func (m Home) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
+	obj := map[string]interface{}{
 		"dog": m.Dog,
-	})
+	}
+
+	return json.Marshal(obj)
 }
