@@ -28,4 +28,16 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles models with union fields", async () => {
+    const [input, expected] = await getTestData("with-union-field");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles models with anonymous union fields", async () => {
+    const [input, expected] = await getTestData("with-anonymous-union-field");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });

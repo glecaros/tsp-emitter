@@ -162,17 +162,19 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             value,
             model: parentScope.symbol,
           });
-        } else {
+        } else if (type.kind === "Union") {
           scopes.push({
             kind: "property",
             name: property.name,
             doc,
-            type: undefined,
+            type: type.name === undefined ? undefined : symbolTable.deferResolve(type.name, type.namespace?.name),
             goName,
             jsonName,
             optional,
             model: parentScope.symbol,
           });
+        } else {
+          throw new Error(`Unsupported property kind ${type.kind}`);
         }
       },
       exitModelProperty: (_: ModelProperty) => {
