@@ -1,30 +1,5 @@
-import { Optional, stripIndent } from "./common.js";
+import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
 import { BaseSymbol } from "./symbol.js";
-
-export type ConstantValue = BooleanValue | StringValue | NumberValue;
-
-export interface BooleanValue {
-  type: "boolean";
-  value: boolean;
-}
-
-export interface StringValue {
-  type: "string";
-  value: string;
-}
-
-export interface NumberValue {
-  type: "number";
-  value: number;
-}
-
-function valueToGo(value: ConstantValue): string {
-  if (value.type === "boolean" || value.type === "number") {
-    return `${value.value}`;
-  } else {
-    return `"${value.value}"`;
-  }
-}
 
 export interface ModelPropertyDef {
   name: string;
@@ -51,28 +26,34 @@ export class ModelSymbol implements BaseSymbol {
   emit(): string {
     return stripIndent`
             ${this.doc !== undefined ? `// ${this.goName} ${this.doc}"}` : ""}
-            type ${this.goName} struct {${this.properties.filter(m => !m.isConstant)
+            type ${this.goName} struct {${this.properties
+              .filter((m) => !m.isConstant)
               .map((m) =>
                 m.doc !== undefined
                   ? `
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.optional ? "*" : "" }${m.type.goName}`,
+                ${m.goName} ${m.optional ? "*" : ""}${m.type.goName}`,
               )
               .join("")}
-            }${this.properties.filter(m => m.isConstant).map(m => `
+            }${this.properties
+              .filter((m) => m.isConstant)
+              .map(
+                (m) => `
 
             func (m ${this.goName}) ${m.goName}() ${m.type.goName} {
                 return ${valueToGo(m.value!)}
-            }`).join("")}
+            }`,
+              )
+              .join("")}
 
             func (m *${this.goName})  UnmarshalJSON(data []byte) error {
                 var rawMsg map[string]json.RawMessage
                 if err := json.Unmarshal(data, &rawMsg); err != nil {
                     return err
                 }${this.properties
-                    .filter(m => !m.isConstant)
+                  .filter((m) => !m.isConstant)
                   .map(
                     (m) => `
                 if v, ok := rawMsg["${m.name}"]; ok {
@@ -86,13 +67,23 @@ export class ModelSymbol implements BaseSymbol {
             }
 
             func (m ${this.goName}) MarshalJSON() ([]byte, error) {
-                obj := map[string]interface{}{${this.properties.filter(m => !m.optional).map(m => `
-                    "${m.jsonName}": ${m.isConstant ? valueToGo(m.value!) : `m.${m.goName}`},`).join("")}
+                obj := map[string]interface{}{${this.properties
+                  .filter((m) => !m.optional)
+                  .map(
+                    (m) => `
+                    "${m.jsonName}": ${m.isConstant ? valueToGo(m.value!) : `m.${m.goName}`},`,
+                  )
+                  .join("")}
                 }
-                ${this.properties.filter(m => m.optional).map(m => `
+                ${this.properties
+                  .filter((m) => m.optional)
+                  .map(
+                    (m) => `
                 if m.${m.goName} != nil {
                     obj["${m.jsonName}"] = m.${m.goName}
-                }`).join("")}
+                }`,
+                  )
+                  .join("")}
 
                 return json.Marshal(obj)
             }`;

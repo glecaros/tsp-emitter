@@ -63,5 +63,30 @@ export function getEncodedName(element: Decorated, mimeType: string): Optional<s
 
 export function getDiscriminator(element: Decorated): Optional<string> {
   const discriminator = getDecoratorArg(element, "@discriminator", (args) => args.length === 1);
-  return  discriminator?.at(0)?.jsValue?.toString();
+  return discriminator?.at(0)?.jsValue?.toString();
+}
+
+export type ConstantValue = BooleanValue | StringValue | NumberValue;
+
+export interface BooleanValue {
+  type: "boolean";
+  value: boolean;
+}
+
+export interface StringValue {
+  type: "string";
+  value: string;
+}
+
+export interface NumberValue {
+  type: "number";
+  value: number;
+}
+
+export function valueToGo(value: ConstantValue): string {
+  if (value.type === "boolean" || value.type === "number") {
+    return `${value.value}`;
+  } else {
+    return `"${value.value}"`;
+  }
 }
