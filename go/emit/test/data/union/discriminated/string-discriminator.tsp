@@ -1,7 +1,7 @@
 namespace discriminator;
 
 @discriminator("kind")
-union StringDiscriminator {
+union Pet {
   cat: Cat,
   dog: Dog,
 }

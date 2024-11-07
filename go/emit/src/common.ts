@@ -60,3 +60,8 @@ export function getEncodedName(element: Decorated, mimeType: string): Optional<s
   );
   return encodedName?.at(1)?.jsValue as Optional<string>;
 }
+
+export function getDiscriminator(element: Decorated): Optional<string> {
+  const discriminator = getDecoratorArg(element, "@discriminator", (args) => args.length === 1);
+  return  discriminator?.at(0)?.jsValue?.toString();
+}
