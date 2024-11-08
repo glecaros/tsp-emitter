@@ -6,7 +6,7 @@ export interface ModelPropertyDef {
   goName: string;
   jsonName: string;
   doc: Optional<string>;
-  type: BaseSymbol;
+  type: Optional<() => Optional<BaseSymbol>>;
   optional: boolean;
   isConstant: boolean;
   value: Optional<ConstantValue>;
@@ -34,7 +34,7 @@ export class ModelSymbol implements BaseSymbol {
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.optional ? "*" : ""}${m.type.goName}`,
+                ${m.goName} ${m.optional ? "*" : ""}${m.type!()!.goName}`,
               )
               .join("")}
             }${this.properties
@@ -42,7 +42,7 @@ export class ModelSymbol implements BaseSymbol {
               .map(
                 (m) => `
 
-            func (m ${this.goName}) ${m.goName}() ${m.type.goName} {
+            func (m ${this.goName}) ${m.goName}() ${m.type!()!.goName} {
                 return ${valueToGo(m.value!)}
             }`,
               )

@@ -1,4 +1,11 @@
-import { DecoratorApplication, DecoratorArgument, Scalar } from "@typespec/compiler";
+import {
+  BooleanLiteral,
+  DecoratorApplication,
+  DecoratorArgument,
+  NumericLiteral,
+  StringLiteral,
+  Type,
+} from "@typespec/compiler";
 
 export function stripIndent(strings: TemplateStringsArray, ...values: any[]): string {
   const fullString = strings.reduce((acc, str, i) => acc + str + (values[i] || ""), "").replace(/^\n+/g, "");
@@ -89,4 +96,36 @@ export function valueToGo(value: ConstantValue): string {
   } else {
     return `"${value.value}"`;
   }
+}
+
+export function getLiteralValue(literal: BooleanLiteral | NumericLiteral | StringLiteral): [string, ConstantValue] {
+  if (literal.kind === "Boolean") {
+    return [
+      "boolean",
+      {
+        type: "boolean",
+        value: literal.value,
+      },
+    ];
+  } else if (literal.kind === "String") {
+    return [
+      "string",
+      {
+        type: "string",
+        value: literal.value,
+      },
+    ];
+  } else {
+    return [
+      "numeric",
+      {
+        type: "number",
+        value: literal.value,
+      },
+    ];
+  }
+}
+
+export function supportedLiteral(type: Type): type is BooleanLiteral | NumericLiteral | StringLiteral {
+  return ["Boolean", "Number", "String"].includes(type.kind);
 }

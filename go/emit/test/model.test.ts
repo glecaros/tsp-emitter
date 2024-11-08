@@ -40,4 +40,10 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles models with constant fields (union variant)", async () => {
+    const [input, expected] = await getTestData("with-constant-field-enum");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });

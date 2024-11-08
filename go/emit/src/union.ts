@@ -76,12 +76,12 @@ function emitTypeUnion(
   return stripIndent`
       ${doc !== undefined ? `// ${name} ${doc}` : ""}
       type ${name} interface {
-        ${discriminator.goName}() ${discriminator.type.goName}
+        ${discriminator.goName}() ${discriminator.type!()!.goName}
       }
 
       func Unmarshal${pascalCase(name)}(data []byte) (${name}, error) {
         var typeCheck struct {
-          ${discriminator.goName} ${discriminator.type.goName} \`json:"${discriminator.jsonName}"\`
+          ${discriminator.goName} ${discriminator.type!()!.goName} \`json:"${discriminator.jsonName}"\`
         }
         if err := json.Unmarshal(data, &typeCheck); err != nil {
           return nil, err
