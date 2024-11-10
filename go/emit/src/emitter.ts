@@ -7,10 +7,11 @@ import {
   navigateProgram,
   navigateTypesInNamespace,
   Scalar,
+  Type,
   Union,
   UnionVariant,
 } from "@typespec/compiler";
-import { pascalCase } from "change-case";
+import { camelCase, pascalCase } from "change-case";
 import {
   ConstantValue,
   emitHeader,
@@ -22,8 +23,8 @@ import {
   supportedLiteral,
 } from "./common.js";
 import { TypeUnionSymbol, UnionSymbol, ValueUnionSymbol } from "./union.js";
-import { ModelSymbol } from "./model.js";
-import { SymbolTable } from "./symbol.js";
+import { ModelPropertyDef, ModelSymbol } from "./model.js";
+import { BaseSymbol, SymbolTable } from "./symbol.js";
 import { addBuiltInSymbols, BuiltInSymbol } from "./built-in..js";
 
 type Symbol = UnionSymbol | ModelSymbol | BuiltInSymbol;
@@ -57,331 +58,295 @@ export async function $onEmit(context: EmitContext): Promise<void> {
       });
     },
   });
-  interface UnionScope {
-    kind: "union";
-    symbol: UnionSymbol;
-    discriminator: Optional<string>;
-  }
-  interface PropertyScope {
-    kind: "property";
-    name: string;
-    goName: string;
-    jsonName: string;
-    doc: Optional<string>;
-    optional: boolean;
-    type: Optional<() => Optional<Symbol>>;
-    model: ModelSymbol;
-  }
-  interface ConstantPropertyScope {
-    kind: "constant-property";
-    name: string;
-    goName: string;
-    jsonName: string;
-    doc: Optional<string>;
-    type: Optional<() => Optional<Symbol>>;
-    value: Optional<ConstantValue>;
-    model: ModelSymbol;
-  }
+
   interface ModelScope {
-    kind: "model";
+    type: "model";
     symbol: ModelSymbol;
   }
-  type Scope = UnionScope | PropertyScope | ConstantPropertyScope | ModelScope;
+  interface PropertyScope {
+    type: "property";
+    name: string;
+    model: ModelSymbol;
+  }
+  interface UnionScope {
+    type: "union";
+    symbol: UnionSymbol;
+  }
+  interface UnionVariantScope {
+    type: "union-variant";
+    name: string;
+    union: UnionSymbol;
+  }
+  type Scope = ModelScope | PropertyScope | UnionScope | UnionVariantScope;
 
   for (const namespace of namespaces.values()) {
     const scopes: Scope[] = [];
     navigateTypesInNamespace(namespace.typespecDefinition, {
       model: (model: Model) => {
+        if (model.name === undefined || model.name === "") {
+          const parentScope = scopes[scopes.length - 1];
+          if (parentScope.type !== "property") {
+            throw new Error("Expected property scope");
+          }
+          model.name = `${pascalCase(parentScope.model.name)}${pascalCase(parentScope.name)}`;
+        }
         const goName = getEncodedName(model, "text/x-go") || pascalCase(model.name);
         const doc = getDoc(model);
-        scopes.push({
-          kind: "model",
-          symbol: new ModelSymbol(model.name, model.namespace?.name, goName, doc),
-        });
-        console.log(`Model ${model.name}: Start`);
-      },
-      exitModel: (model: Model) => {
-        const modelScope = scopes.pop();
-        if (modelScope?.kind !== "model") {
-          throw new Error("Expected model scope");
-        }
-        const { symbol } = modelScope;
-        namespace.symbols.push(symbol);
+        const symbol = new ModelSymbol(model.name, model.namespace?.name, goName, doc);
         symbolTable.push(symbol);
-        console.log(`Model ${model.name}: End`);
+        scopes.push({ type: "model", symbol: symbol });
+      },
+      exitModel: (_: Model) => {
+        scopes.pop();
       },
       modelProperty: (property: ModelProperty) => {
         const parentScope = scopes[scopes.length - 1];
-        if (parentScope.kind !== "model") {
+        if (parentScope.type !== "model") {
           throw new Error("Expected model scope");
         }
-        const doc = getDoc(property);
-        const goName = getEncodedName(property, "text/x-go") || pascalCase(property.name);
-        const jsonName = getEncodedName(property, "application/json") || property.name;
-
-        const { type, optional } = property;
-
-        if (type.kind === "Scalar" || type.kind === "Model") {
-          scopes.push({
-            kind: "property",
-            name: property.name,
-            doc,
-            type: symbolTable.deferResolve(type.name, type.namespace?.name),
-            goName,
-            jsonName,
-            optional,
-            model: parentScope.symbol,
-          });
-          return;
-        } else if (type.kind === "Boolean" || type.kind === "String" || type.kind === "Number") {
-          const [typeName, value] = getLiteralValue(type);
-          scopes.push({
-            kind: "constant-property",
-            name: property.name,
-            doc,
-            type: symbolTable.deferResolve(typeName, "TypeSpec"),
-            goName,
-            jsonName,
-            value,
-            model: parentScope.symbol,
-          });
-        } else if (type.kind === "Union") {
-          scopes.push({
-            kind: "property",
-            name: property.name,
-            doc,
-            type: type.name === undefined ? undefined : symbolTable.deferResolve(type.name, type.namespace?.name),
-            goName,
-            jsonName,
-            optional,
-            model: parentScope.symbol,
-          });
-        } else if (type.kind === "UnionVariant") {
-          scopes.push({
-            kind: "constant-property",
-            name: property.name,
-            doc,
-            type: undefined,
-            goName,
-            jsonName,
-            value: undefined,
-            model: parentScope.symbol,
-          });
-        } else {
-          throw new Error(`Unsupported property kind ${type.kind}`);
-        }
+        scopes.push({ type: "property", name: property.name, model: parentScope.symbol });
       },
-      exitModelProperty: (property: ModelProperty) => {
-        const propertyScope = scopes.pop();
-        if (propertyScope?.kind === "property") {
-          const { name, goName, jsonName, doc, model, optional } = propertyScope;
-          if (propertyScope.type === undefined) {
-            throw new Error("Property type not defined");
-          }
-          const type = propertyScope.type();
-          if (type === undefined) {
-            throw new Error(`Could not resolve type of property ${name}  of model ${model.name}.`);
-          }
-
-          propertyScope.model.properties.push({
-            name,
-            goName,
-            jsonName,
-            doc,
-            type: () => type,
-            optional,
-            isConstant: false,
-            value: undefined,
-          });
-        } else if (propertyScope?.kind === "constant-property") {
-          if (property.type.kind === "UnionVariant") {
-            const { type } = property.type;
-            if (!supportedLiteral(type)) {
-              throw new Error(
-                `Value of constant property ${propertyScope.name} of model  ${propertyScope.model.name} is of a not supported type.`,
-              );
-            }
-            const [typeName, value] = getLiteralValue(type);
-            propertyScope.type = symbolTable.deferResolve(
-              property.type.union.name!,
-              property.type.union.namespace?.name,
-            );
-            propertyScope.value = value;
-          }
-          const { name, goName, jsonName, doc, type, model, value } = propertyScope;
-          if (type === undefined) {
-            throw new Error(`Could not resolve type of property ${name}  of model ${model.name}.`);
-          }
-          propertyScope.model.properties.push({
-            name,
-            goName,
-            jsonName,
-            doc,
-            type,
-            optional: false,
-            isConstant: true,
-            value,
-          });
-        } else {
-          throw new Error("Expected property scope");
-        }
+      exitModelProperty: (_: ModelProperty) => {
+        scopes.pop();
       },
-
       union: (union: Union) => {
-        const [unionName, goName, anonymous] = (() => {
-          if (union.name === undefined) {
-            /* Anonymous union (inline or alias), we'll best effort name it from the containing scopes */
-            const parentScope = scopes[scopes.length - 1];
-            if (parentScope.kind === "property") {
-              const propertyName = parentScope.name;
-              const modelName = parentScope.model.name;
-              const generatedName = `${pascalCase(modelName)}${pascalCase(propertyName)}`;
-              return [generatedName, generatedName, true];
-            } else {
-              throw new Error("Anonymous union not contained in a property");
-            }
+        const parentScope = scopes[scopes.length - 1];
+        if (union.name === undefined) {
+          if (parentScope.type === "property") {
+            const propertyName = parentScope.name;
+            const modelName = parentScope.model.name;
+            const generatedName = `${camelCase(modelName)}${pascalCase(propertyName)}`;
+            union.name = generatedName;
           } else {
-            const goName = getEncodedName(union, "text/x-go") || pascalCase(union.name);
-            return [union.name, goName, false];
+            throw new Error("Anonymous union not contained in a property");
           }
-        })();
+        }
+        const goName = getEncodedName(union, "text/x-go") || pascalCase(union.name);
         const doc = getDoc(union);
         const discriminator = getDiscriminator(union);
-        if (discriminator === undefined) {
-          scopes.push({
-            kind: "union",
-            discriminator: undefined,
-            symbol: new ValueUnionSymbol(unionName, union.namespace?.name, goName, doc, anonymous),
-          });
-        } else {
-          scopes.push({
-            kind: "union",
-            discriminator: discriminator,
-            symbol: new TypeUnionSymbol(unionName, union.namespace?.name, goName, doc),
+
+        const symbol =
+          discriminator !== undefined
+            ? new TypeUnionSymbol(union.name, union.namespace?.name, goName, doc, discriminator)
+            : new ValueUnionSymbol(union.name, union.namespace?.name, goName, doc);
+
+        symbolTable.push(symbol);
+        scopes.push({ type: "union", symbol: symbol });
+      },
+      exitUnion: (_: Union) => {
+        scopes.pop();
+      },
+    });
+  }
+
+  for (const namespace of namespaces.values()) {
+    const scopes: Scope[] = [];
+
+    navigateTypesInNamespace(namespace.typespecDefinition, {
+      model: (model: Model) => {
+        const symbol = symbolTable.find(model.name, model.namespace?.name);
+        if (symbol?.kind !== "model") {
+          throw new Error(`Model ${model.name} not found.`);
+        }
+        scopes.push({ type: "model", symbol: symbol });
+      },
+      exitModel: (_: Model) => {
+        const scope = scopes.pop();
+        if (scope === undefined || scope.type !== "model") {
+          throw new Error("Expected model scope");
+        }
+        const { symbol } = scope;
+        namespace.symbols.push(symbol);
+      },
+      modelProperty: (property: ModelProperty) => {
+        const parentScope = scopes[scopes.length - 1];
+        if (parentScope.type !== "model") {
+          throw new Error("Expected model scope");
+        }
+        scopes.push({ type: "property", name: property.name, model: parentScope.symbol });
+      },
+      exitModelProperty: (property: ModelProperty) => {
+        const scope = scopes.pop();
+        if (scope?.type !== "property") {
+          throw new Error("Expected property scope");
+        }
+        const { name, model } = scope;
+        const goName = getEncodedName(property, "text/x-go") || pascalCase(name);
+        const jsonName = getEncodedName(property, "application/json") || name;
+        const doc = getDoc(property);
+        const { type, optional } = property;
+        if (
+          type.kind === "Scalar" ||
+          type.kind === "Model" ||
+          type.kind === "Union" ||
+          type.kind === "UnionVariant" ||
+          supportedLiteral(type)
+        ) {
+          const [typeName, typeNamespace, value] = ((): [string, Optional<string>, Optional<ConstantValue>] => {
+            if (type.kind === "Scalar" || type.kind === "Model") {
+              return [type.name, type.namespace?.name, undefined];
+            } else if (supportedLiteral(type)) {
+              const [typeName, value] = getLiteralValue(type);
+              return [typeName, "TypeSpec", value];
+            } else if (type.kind === "Union") {
+              if (type.name === undefined) {
+                throw new Error("Name of union type not defined");
+              }
+              return [type.name, type.namespace?.name, undefined];
+            } else if (type.kind === "UnionVariant") {
+              if (type.union.name === undefined) {
+                throw new Error("Name of union type not defined");
+              }
+              if (!supportedLiteral(type.type)) {
+                throw new Error(
+                  `Value of constant property ${property.name} of model ${model.name} is of a not supported type.`,
+                );
+              }
+              const [_, value] = getLiteralValue(type.type);
+              return [type.union.name, type.union.namespace?.name, value];
+            }
+            throw new Error("Unsupported type kind");
+          })();
+          const typeSymbol = symbolTable.find(typeName, typeNamespace);
+          if (typeSymbol === undefined) {
+            throw new Error(`Type ${typeName} not found.`);
+          }
+          model.properties.push({
+            name: property.name,
+            goName,
+            jsonName,
+            doc,
+            type: typeSymbol,
+            optional,
+            constant: value !== undefined,
+            value: value,
           });
         }
       },
-      exitUnion: (_: Union) => {
-        const unionScope = scopes.pop();
-        if (unionScope?.kind === "union") {
-          const { symbol } = unionScope;
-          if (symbol.name === undefined) {
-            throw new Error("Union type not defined");
-          }
-
-          /* TODO: combine namespace and symbolTable */
-          namespace.symbols.push(symbol);
-          symbolTable.push(symbol);
-          if (symbol.kind === "value_union" && symbol.anonymous) {
-            const parentScope = scopes[scopes.length - 1];
-            if (parentScope.kind !== "property") {
-              throw new Error("Expected property scope");
-            }
-            parentScope.type = symbolTable.deferResolve(symbol.name, symbol.namespace);
-          }
+      union: (union: Union) => {
+        if (union.name === undefined) {
+          throw new Error("Union name not defined");
         }
+        const symbol = symbolTable.find(union.name, union.namespace?.name);
+        if (symbol?.kind !== "value_union" && symbol?.kind !== "type_union") {
+          throw new Error(`Union ${union.name} not found.`);
+        }
+
+        scopes.push({ type: "union", symbol });
+      },
+      exitUnion: (_: Union) => {
+        const scope = scopes.pop();
+        if (scope === undefined || scope.type !== "union") {
+          throw new Error("Expected union scope");
+        }
+        const { symbol } = scope;
+        if (symbol.kind === "type_union") {
+          const goNames = new Set<string>();
+          const jsNames = new Set<string>();
+          const types = new Set<BaseSymbol>();
+          for (const variant of symbol.variants) {
+            goNames.add(variant.tag.goName);
+            jsNames.add(variant.tag.name);
+            types.add(variant.tag.type);
+          }
+          if (goNames.size !== 1 || jsNames.size !== 1 || types.size !== 1) {
+            throw new Error(
+              `The discriminator for all variants of union ${symbol.name} should have the same encoded name and type.`,
+            );
+          }
+          symbol.discriminator = {
+            name: symbol.discriminatorName,
+            goName: goNames.values().next().value!,
+            jsonName: jsNames.values().next().value!,
+            type: types.values().next().value!,
+          };
+        }
+        namespace.symbols.push(symbol);
       },
       unionVariant: (variant: UnionVariant) => {
         const parentScope = scopes[scopes.length - 1];
-        if (parentScope.kind === "union") {
+        if (parentScope.type === "property") {
+          return;
+        }
+        if (parentScope.type !== "union") {
+          throw new Error("Expected union scope");
+        }
+        if (parentScope.symbol.kind === "value_union") {
           const { type } = variant;
-          const doc = getDoc(variant);
-          const goName = getEncodedName(variant, "text/x-go");
-          if (parentScope.symbol.kind === "value_union") {
-            if (type.kind === "String") {
-              const variantName = typeof variant.name === "string" ? variant.name : type.value;
-              if (parentScope.symbol.type === undefined) {
-                parentScope.symbol.type = "string";
-              } else if (parentScope.symbol.type !== "string") {
-                throw new Error("Union must contain only one scalar type");
-              }
-              parentScope.symbol.variants.push({
-                name: variantName,
-                goName: goName || pascalCase(variantName),
-                doc,
-                value: `"${type.value}"`,
-              });
-            } else if (type.kind === "Number") {
-              const variantName = typeof variant.name === "string" ? variant.name : type.valueAsString;
-              if (parentScope.symbol.type === undefined) {
-                parentScope.symbol.type = "int64";
-              } else if (parentScope.symbol.type !== "int32" && parentScope.symbol.type !== "int64") {
-                throw new Error("Union must contain only one scalar type");
-              }
-              parentScope.symbol.variants.push({
-                name: variantName,
-                goName: goName || pascalCase(variantName),
-                doc,
-                value: type.valueAsString,
-              });
-            } else if (type.kind === "Scalar") {
-              parentScope.symbol.type = type.name;
-            } else {
-              throw new Error(`Types of kind ${type.kind} are not supported for value unions.`);
+          if (supportedLiteral(type)) {
+            const [typeName, value] = getLiteralValue(type);
+            const typeSymbol = symbolTable.find(typeName, "TypeSpec");
+            if (typeSymbol === undefined) {
+              throw new Error(`Type ${typeName} not found.`);
             }
+            parentScope.symbol.checkAndSetType(typeSymbol, true);
+
+            const variantName = typeof variant.name === "string" ? variant.name : camelCase(`${value.value}`);
+            const goName = getEncodedName(variant, "text/x-go") || pascalCase(variantName);
+            const doc = getDoc(variant);
+            parentScope.symbol.variants.push({
+              name: variantName,
+              goName,
+              doc,
+              value,
+            });
+            scopes.push({ type: "union-variant", name: variantName, union: parentScope.symbol });
+          } else if (type.kind === "Scalar") {
+            const scalarSymbol = symbolTable.find(type.name, type.namespace?.name);
+            if (scalarSymbol === undefined) {
+              throw new Error(`Type ${type.name} not found.`);
+            }
+            parentScope.symbol.checkAndSetType(scalarSymbol, false);
+            scopes.push({ type: "union-variant", name: scalarSymbol.name, union: parentScope.symbol });
+          } else {
+            throw new Error(`Unsupported union variant kind ${type.kind}`);
           }
+        } else {
+          if (variant.type.kind !== "Model") {
+            throw new Error(`Types of kind ${variant.type.kind} are not supported for discriminated unions.`);
+          }
+          scopes.push({ type: "union-variant", name: variant.type.name, union: parentScope.symbol });
         }
       },
       exitUnionVariant: (variant: UnionVariant) => {
+        if (scopes[scopes.length - 1].type === "property") {
+          return;
+        }
+        scopes.pop();
         const parentScope = scopes[scopes.length - 1];
-
-        if (parentScope.kind === "union") {
-          // throw new Error("Expected union scope");
-          if (parentScope.symbol.kind !== "type_union") {
-            /* We only resolve type unions in the exit to ensure types are defined */
-            return;
+        if (parentScope.type !== "union") {
+          throw new Error("Expected union scope");
+        }
+        const { symbol } = parentScope;
+        if (symbol.kind === "type_union") {
+          if (variant.type.kind !== "Model") {
+            throw new Error(`Types of kind ${variant.type.kind} are not supported for discriminated unions.`);
           }
-          const { type } = variant;
-          if (type.kind !== "Model") {
-            throw new Error(`Types of kind ${type.kind} are not supported for type unions.`);
-          }
-
-          const doc = getDoc(variant);
-          const goName = getEncodedName(variant, "text/x-go");
-          const variantName = typeof variant.name === "string" ? variant.name : type.name;
-          const variantType = symbolTable.find(type.name, type.namespace?.name);
+          const variantType = symbolTable.find(variant.type.name, variant.type.namespace?.name);
           if (variantType === undefined) {
-            throw new Error(`Type ${type.name} not found.`);
+            throw new Error(`Type ${variant.type.name} not found.`);
           }
           if (variantType.kind !== "model") {
-            throw new Error(`Expected a model symbol as type for the union variant ${variantName}`);
+            throw new Error(`Expected a model symbol as type for the union variant ${variant.type.name}`);
           }
-          const discriminatorField = variantType.properties.find((p) => p.name === parentScope.discriminator);
+          const discriminatorField = variantType.properties.find((p) => p.name === symbol.discriminatorName);
           if (discriminatorField === undefined) {
-            throw new Error(`Could not find discriminator ${parentScope.discriminator} in variant ${variantName}`);
+            throw new Error(`Could not find discriminator ${symbol.discriminatorName} in variant ${variantType.name}`);
           }
-          if (parentScope.symbol.discriminator === undefined) {
-            parentScope.symbol.discriminator = discriminatorField;
-          } else {
-            const compatible =
-              parentScope.symbol.discriminator.type!() === discriminatorField.type!() &&
-              parentScope.symbol.discriminator.isConstant === discriminatorField.isConstant;
-            if (!compatible) {
-              throw new Error(
-                `Discriminator ${parentScope.discriminator} in variant ${variantName} does not match the union discriminator.`,
-              );
-            }
+          if (!discriminatorField.constant) {
+            throw new Error(
+              `Discriminator ${symbol.discriminatorName} in variant ${variantType.name} must be a constant property.`,
+            );
           }
-          parentScope.symbol.variants.push({
-            name: variantName,
-            goName: goName || pascalCase(variantName),
-            doc,
+
+          symbol.variants.push({
+            name: variantType.name,
+            goName: variantType.goName,
+            doc: getDoc(variant),
             typeSymbol: variantType,
-            tag: discriminatorField.value!,
+            tag: discriminatorField,
           });
         }
-      },
-      scalar: (scalar: Scalar) => {
-        console.log(`Scalar ${scalar.name}: Start`);
-      },
-      exitScalar: (scalar: Scalar) => {
-        console.log(`Scalar ${scalar.name}: End`);
-      },
-      boolean: (scalar: BooleanLiteral) => {
-        console.log(`Boolean ${scalar.value}: Start`);
-      },
-      exitBoolean: (scalar: BooleanLiteral) => {
-        console.log(`Boolean ${scalar.value}: End`);
       },
     });
   }

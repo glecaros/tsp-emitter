@@ -6,9 +6,9 @@ export interface ModelPropertyDef {
   goName: string;
   jsonName: string;
   doc: Optional<string>;
-  type: Optional<() => Optional<BaseSymbol>>;
+  type: BaseSymbol;
   optional: boolean;
-  isConstant: boolean;
+  constant: boolean;
   value: Optional<ConstantValue>;
 }
 
@@ -27,22 +27,22 @@ export class ModelSymbol implements BaseSymbol {
     return stripIndent`
             ${this.doc !== undefined ? `// ${this.goName} ${this.doc}"}` : ""}
             type ${this.goName} struct {${this.properties
-              .filter((m) => !m.isConstant)
+              .filter((m) => !m.constant)
               .map((m) =>
                 m.doc !== undefined
                   ? `
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.optional ? "*" : ""}${m.type!()!.goName}`,
+                ${m.goName} ${m.optional ? "*" : ""}${m.type.goName}`,
               )
               .join("")}
             }${this.properties
-              .filter((m) => m.isConstant)
+              .filter((m) => m.constant)
               .map(
                 (m) => `
 
-            func (m ${this.goName}) ${m.goName}() ${m.type!()!.goName} {
+            func (m ${this.goName}) ${m.goName}() ${m.type.goName} {
                 return ${valueToGo(m.value!)}
             }`,
               )
@@ -53,7 +53,7 @@ export class ModelSymbol implements BaseSymbol {
                 if err := json.Unmarshal(data, &rawMsg); err != nil {
                     return err
                 }${this.properties
-                  .filter((m) => !m.isConstant)
+                  .filter((m) => !m.constant)
                   .map(
                     (m) => `
                 if v, ok := rawMsg["${m.name}"]; ok {
@@ -71,7 +71,7 @@ export class ModelSymbol implements BaseSymbol {
                   .filter((m) => !m.optional)
                   .map(
                     (m) => `
-                    "${m.jsonName}": ${m.isConstant ? valueToGo(m.value!) : `m.${m.goName}`},`,
+                    "${m.jsonName}": ${m.constant ? valueToGo(m.value!) : `m.${m.goName}`},`,
                   )
                   .join("")}
                 }

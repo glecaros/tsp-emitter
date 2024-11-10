@@ -10,10 +10,8 @@ export class BuiltInSymbol implements BaseSymbol {
   ) {}
 }
 
-const builtInSymbols = [
-  new BuiltInSymbol("numeric", "float64"),
+export const integerTypes = [
   new BuiltInSymbol("integer", "int64"),
-  new BuiltInSymbol("float", "float64"),
   new BuiltInSymbol("int64", "int64"),
   new BuiltInSymbol("int32", "int32"),
   new BuiltInSymbol("int16", "int16"),
@@ -23,6 +21,12 @@ const builtInSymbols = [
   new BuiltInSymbol("uint32", "uint32"),
   new BuiltInSymbol("uint16", "uint16"),
   new BuiltInSymbol("uint8", "uint8"),
+];
+
+export const builtInSymbols = [
+  new BuiltInSymbol("numeric", "float64"),
+  new BuiltInSymbol("float", "float64"),
+  ...integerTypes,
   new BuiltInSymbol("float32", "float32"),
   new BuiltInSymbol("float64", "float64"),
   // new BuiltInSymbol("decimal", ""),

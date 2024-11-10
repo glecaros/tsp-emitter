@@ -46,4 +46,10 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles models with anonymous model fields", async () => {
+    const [input, expected] = await getTestData("with-anonymous-model-field");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });

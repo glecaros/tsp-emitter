@@ -2,6 +2,7 @@ import { pascalCase } from "change-case";
 import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
 import { ModelPropertyDef } from "./model.js";
 import { BaseSymbol } from "./symbol.js";
+import { integerTypes } from "./built-in..js";
 
 function emitValueUnion(name: string, doc: Optional<string>, type: string, variants: ValueUnionVariant[]): string {
   const variantName = (v: ValueUnionVariant) => {
@@ -18,7 +19,7 @@ function emitValueUnion(name: string, doc: Optional<string>, type: string, varia
         // ${variantName(v)} ${v.doc}`
             : "" +
               `
-        ${variantName(v)} ${name} = ${v.value}`,
+        ${variantName(v)} ${name} = ${valueToGo(v.value)}`,
         )
         .join("")}
       )
@@ -43,12 +44,14 @@ export interface ValueUnionVariant {
   name: string;
   goName: string;
   doc: Optional<string>;
-  value: string;
+  value: ConstantValue;
 }
+
+const integers = integerTypes.map((i) => i.name);
 
 export class ValueUnionSymbol implements BaseSymbol {
   public readonly kind: "value_union" = "value_union";
-  public type: Optional<string> = undefined;
+  public type: Optional<BaseSymbol> = undefined;
   public readonly variants: ValueUnionVariant[] = [];
 
   public constructor(
@@ -56,32 +59,42 @@ export class ValueUnionSymbol implements BaseSymbol {
     public namespace: Optional<string>,
     public goName: string,
     public doc: Optional<string>,
-    public anonymous: boolean,
   ) {}
+
+  checkAndSetType(type: BaseSymbol, fromLiteral: boolean): void {
+    if (this.type === undefined) {
+      this.type = type;
+    } else if (this.type !== type) {
+      if (fromLiteral && integers.includes(this.type.name) && integers.includes(type.name)) {
+        return;
+      }
+      throw new Error(`Type mismatch for union ${this.name}`);
+    }
+  }
 
   emit(): string {
     if (this.type === undefined) {
       throw new Error("Union type not defined");
     }
-    return emitValueUnion(this.goName, this.doc, this.type, this.variants);
+    return emitValueUnion(this.goName, this.doc, this.type.goName, this.variants);
   }
 }
 
 function emitTypeUnion(
   name: string,
   doc: Optional<string>,
-  discriminator: ModelPropertyDef,
+  discriminator: DiscriminatorDef,
   variants: TypeUnionVariant[],
 ): string {
   return stripIndent`
       ${doc !== undefined ? `// ${name} ${doc}` : ""}
       type ${name} interface {
-        ${discriminator.goName}() ${discriminator.type!()!.goName}
+        ${discriminator.goName}() ${discriminator.type.goName}
       }
 
       func Unmarshal${pascalCase(name)}(data []byte) (${name}, error) {
         var typeCheck struct {
-          ${discriminator.goName} ${discriminator.type!()!.goName} \`json:"${discriminator.jsonName}"\`
+          ${discriminator.goName} ${discriminator.type.goName} \`json:"${discriminator.jsonName}"\`
         }
         if err := json.Unmarshal(data, &typeCheck); err != nil {
           return nil, err
@@ -91,7 +104,7 @@ function emitTypeUnion(
         switch typeCheck.${discriminator.goName} {${variants
           .map(
             (v) => `
-        case ${valueToGo(v.tag)}:
+        case ${valueToGo(v.tag.value!)}:
           var v ${v.typeSymbol.goName}
           if err := json.Unmarshal(data, &v); err != nil {
             return nil, err
@@ -105,24 +118,32 @@ function emitTypeUnion(
       }`;
 }
 
+export interface DiscriminatorDef {
+  name: string;
+  goName: string;
+  jsonName: string;
+  type: BaseSymbol;
+}
+
 export interface TypeUnionVariant {
   name: string;
   goName: string;
   doc: Optional<string>;
   typeSymbol: BaseSymbol;
-  tag: ConstantValue;
+  tag: ModelPropertyDef;
 }
 
 export class TypeUnionSymbol implements BaseSymbol {
   public readonly kind: "type_union" = "type_union";
   public readonly variants: TypeUnionVariant[] = [];
-  public discriminator: Optional<ModelPropertyDef> = undefined;
+  public discriminator: Optional<DiscriminatorDef> = undefined;
 
   public constructor(
     public name: string,
     public namespace: Optional<string>,
     public goName: string,
     public doc: Optional<string>,
+    public discriminatorName: string,
   ) {}
 
   emit(): string {

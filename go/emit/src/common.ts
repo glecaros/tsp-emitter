@@ -116,13 +116,23 @@ export function getLiteralValue(literal: BooleanLiteral | NumericLiteral | Strin
       },
     ];
   } else {
-    return [
-      "numeric",
-      {
-        type: "number",
-        value: literal.value,
-      },
-    ];
+    if (literal.numericValue.isInteger) {
+      return [
+        "integer",
+        {
+          type: "number",
+          value: literal.value,
+        },
+      ];
+    } else {
+      return [
+        "numeric",
+        {
+          type: "number",
+          value: literal.value,
+        },
+      ];
+    }
   }
 }
 
