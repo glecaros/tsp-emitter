@@ -1,33 +1,21 @@
 import {
-  BooleanLiteral,
   EmitContext,
   Model,
   ModelProperty,
   Namespace,
   navigateProgram,
   navigateTypesInNamespace,
-  Scalar,
-  Type,
   Union,
   UnionVariant,
 } from "@typespec/compiler";
 import { camelCase, pascalCase } from "change-case";
-import {
-  ConstantValue,
-  emitHeader,
-  getDiscriminator,
-  getDoc,
-  getEncodedName,
-  getLiteralValue,
-  Optional,
-  supportedLiteral,
-} from "./common.js";
+import { emitHeader, getDiscriminator, getDoc, getEncodedName, getLiteralValue, supportedLiteral } from "./common.js";
 import { TypeUnionSymbol, UnionSymbol, ValueUnionSymbol } from "./union.js";
-import { ModelPropertyDef, ModelSymbol } from "./model.js";
+import { ModelSymbol, PropertyType } from "./model.js";
 import { BaseSymbol, SymbolTable } from "./symbol.js";
-import { addBuiltInSymbols, BuiltInSymbol } from "./built-in..js";
+import { addBuiltInSymbols, BuiltInSymbol, BuiltInTemplate } from "./built-in.js";
 
-type Symbol = UnionSymbol | ModelSymbol | BuiltInSymbol;
+type Symbol = UnionSymbol | ModelSymbol | BuiltInSymbol | BuiltInTemplate;
 
 interface NamespaceDefinition {
   name: string;
@@ -105,6 +93,18 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           throw new Error("Expected model scope");
         }
         scopes.push({ type: "property", name: property.name, model: parentScope.symbol });
+        const { type } = property;
+        if (type.kind === "Model") {
+          /* Anonymous unions are not included in the traversal, here we name and add them */
+          for (const t of type.templateMapper?.args.values() || []) {
+            if (t.entityKind === "Type") {
+              if (t.kind === "Union" && t.name === undefined) {
+                t.name = `${camelCase(parentScope.symbol.name)}${pascalCase(property.name)}`;
+                namespace.typespecDefinition.unions.set(t.name, t);
+              }
+            }
+          }
+        }
       },
       exitModelProperty: (_: ModelProperty) => {
         scopes.pop();
@@ -182,17 +182,60 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           type.kind === "UnionVariant" ||
           supportedLiteral(type)
         ) {
-          const [typeName, typeNamespace, value] = ((): [string, Optional<string>, Optional<ConstantValue>] => {
-            if (type.kind === "Scalar" || type.kind === "Model") {
-              return [type.name, type.namespace?.name, undefined];
-            } else if (supportedLiteral(type)) {
-              const [typeName, value] = getLiteralValue(type);
-              return [typeName, "TypeSpec", value];
-            } else if (type.kind === "Union") {
+          const propertyType = ((): PropertyType => {
+            if (type.kind === "Scalar" || type.kind === "Model" || type.kind === "Union") {
               if (type.name === undefined) {
                 throw new Error("Name of union type not defined");
               }
-              return [type.name, type.namespace?.name, undefined];
+              const symbol = symbolTable.find(type.name, type.namespace?.name);
+              if (symbol === undefined) {
+                throw new Error(`Type ${type.name} not found.`);
+              }
+              if (symbol.kind === "built-in-template") {
+                if (type.templateMapper?.args.length !== 1) {
+                  throw new Error("Array or Record template must have exactly one argument.");
+                }
+                const arg = type.templateMapper.args[0];
+                if (arg.entityKind !== "Type") {
+                  throw new Error("Unsupported arg entity kind");
+                }
+                if (arg.kind !== "Model" && arg.kind !== "Scalar" && arg.kind !== "Union") {
+                  throw new Error("Unsupported arg kind");
+                }
+                if (arg.name === undefined) {
+                  throw new Error("Union name not defined");
+                }
+                const argSymbol = symbolTable.find(arg.name, arg.namespace?.name);
+                if (argSymbol === undefined) {
+                  throw new Error(`Type ${arg.name} not found.`);
+                }
+                return {
+                  kind: "template_instance",
+                  template: symbol,
+                  args: [
+                    {
+                      kind: "type",
+                      symbol: argSymbol,
+                    },
+                  ],
+                };
+              } else {
+                return {
+                  kind: "model",
+                  type: symbol,
+                };
+              }
+            } else if (supportedLiteral(type)) {
+              const [typeName, value] = getLiteralValue(type);
+              const symbol = symbolTable.find(typeName, "TypeSpec");
+              if (symbol === undefined) {
+                throw new Error(`Type ${typeName} not found.`);
+              }
+              return {
+                kind: "constant",
+                type: symbol,
+                value,
+              };
             } else if (type.kind === "UnionVariant") {
               if (type.union.name === undefined) {
                 throw new Error("Name of union type not defined");
@@ -202,24 +245,26 @@ export async function $onEmit(context: EmitContext): Promise<void> {
                   `Value of constant property ${property.name} of model ${model.name} is of a not supported type.`,
                 );
               }
+              const symbol = symbolTable.find(type.union.name, type.union.namespace?.name);
+              if (symbol === undefined) {
+                throw new Error(`Type ${type.union.name} not found.`);
+              }
               const [_, value] = getLiteralValue(type.type);
-              return [type.union.name, type.union.namespace?.name, value];
+              return {
+                kind: "constant",
+                type: symbol,
+                value: value,
+              };
             }
             throw new Error("Unsupported type kind");
           })();
-          const typeSymbol = symbolTable.find(typeName, typeNamespace);
-          if (typeSymbol === undefined) {
-            throw new Error(`Type ${typeName} not found.`);
-          }
           model.properties.push({
             name: property.name,
             goName,
             jsonName,
             doc,
-            type: typeSymbol,
+            type: propertyType,
             optional,
-            constant: value !== undefined,
-            value: value,
           });
         }
       },
@@ -245,9 +290,12 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           const jsNames = new Set<string>();
           const types = new Set<BaseSymbol>();
           for (const variant of symbol.variants) {
+            if (variant.tag.type.kind !== "constant") {
+              throw new Error(`Discriminator ${variant.tag.name} must be a constant property.`);
+            }
             goNames.add(variant.tag.goName);
             jsNames.add(variant.tag.name);
-            types.add(variant.tag.type);
+            types.add(variant.tag.type.type);
           }
           if (goNames.size !== 1 || jsNames.size !== 1 || types.size !== 1) {
             throw new Error(
@@ -333,7 +381,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           if (discriminatorField === undefined) {
             throw new Error(`Could not find discriminator ${symbol.discriminatorName} in variant ${variantType.name}`);
           }
-          if (!discriminatorField.constant) {
+          if (discriminatorField.type.kind !== "constant") {
             throw new Error(
               `Discriminator ${symbol.discriminatorName} in variant ${variantType.name} must be a constant property.`,
             );

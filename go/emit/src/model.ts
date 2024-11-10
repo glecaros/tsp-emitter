@@ -1,15 +1,69 @@
 import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
 import { BaseSymbol } from "./symbol.js";
 
+export interface TypeTemplateParameter {
+  kind: "type";
+  symbol: BaseSymbol;
+}
+
+export interface ValueTemplateParameter {
+  kind: "value";
+  value: ConstantValue;
+}
+
+export type TemplateParameter = TypeTemplateParameter | ValueTemplateParameter;
+
+export interface ModelPropertyType {
+  kind: "model";
+  type: BaseSymbol;
+}
+
+export interface ConstantPropertyType {
+  kind: "constant";
+  type: BaseSymbol;
+  value: ConstantValue;
+}
+
+export interface TemplateInstancePropertyType {
+  kind: "template_instance";
+  template: BaseSymbol;
+  args: TemplateParameter[];
+}
+
+export type PropertyType = ModelPropertyType | ConstantPropertyType | TemplateInstancePropertyType;
+
 export interface ModelPropertyDef {
   name: string;
   goName: string;
   jsonName: string;
   doc: Optional<string>;
-  type: BaseSymbol;
+  type: PropertyType;
   optional: boolean;
-  constant: boolean;
-  value: Optional<ConstantValue>;
+}
+
+function renderTemplateInstance(type: TemplateInstancePropertyType): string {
+  if (type.template.name === "Array") {
+    return `[]${type.args[0].kind === "type" ? type.args[0].symbol.goName : valueToGo(type.args[0].value)}`;
+  }
+  throw new Error(`Unsupported template instance: ${type.template.name}`);
+}
+
+function renderPropertyType(type: PropertyType): string {
+  if (type.kind === "model") {
+    return type.type.goName;
+  } else if (type.kind === "constant") {
+    return type.type.goName;
+  } else {
+    return renderTemplateInstance(type);
+  }
+}
+
+export function renderValue(type: PropertyType): string {
+  if (type.kind === "constant") {
+    return valueToGo(type.value);
+  } else {
+    throw new Error("Unsupported value");
+  }
 }
 
 export class ModelSymbol implements BaseSymbol {
@@ -27,23 +81,23 @@ export class ModelSymbol implements BaseSymbol {
     return stripIndent`
             ${this.doc !== undefined ? `// ${this.goName} ${this.doc}"}` : ""}
             type ${this.goName} struct {${this.properties
-              .filter((m) => !m.constant)
+              .filter((m) => m.type.kind !== "constant")
               .map((m) =>
                 m.doc !== undefined
                   ? `
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.optional ? "*" : ""}${m.type.goName}`,
+                ${m.goName} ${m.optional ? "*" : ""}${renderPropertyType(m.type)}`,
               )
               .join("")}
             }${this.properties
-              .filter((m) => m.constant)
+              .filter((m) => m.type.kind === "constant")
               .map(
                 (m) => `
 
-            func (m ${this.goName}) ${m.goName}() ${m.type.goName} {
-                return ${valueToGo(m.value!)}
+            func (m ${this.goName}) ${m.goName}() ${renderPropertyType(m.type)} {
+                return ${renderValue(m.type)}
             }`,
               )
               .join("")}
@@ -53,7 +107,7 @@ export class ModelSymbol implements BaseSymbol {
                 if err := json.Unmarshal(data, &rawMsg); err != nil {
                     return err
                 }${this.properties
-                  .filter((m) => !m.constant)
+                  .filter((m) => m.type.kind !== "constant")
                   .map(
                     (m) => `
                 if v, ok := rawMsg["${m.name}"]; ok {
@@ -71,7 +125,7 @@ export class ModelSymbol implements BaseSymbol {
                   .filter((m) => !m.optional)
                   .map(
                     (m) => `
-                    "${m.jsonName}": ${m.constant ? valueToGo(m.value!) : `m.${m.goName}`},`,
+                    "${m.jsonName}": ${m.type.kind === "constant" ? valueToGo(m.type.value) : `m.${m.goName}`},`,
                   )
                   .join("")}
                 }

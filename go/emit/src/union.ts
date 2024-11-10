@@ -1,8 +1,8 @@
 import { pascalCase } from "change-case";
 import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
-import { ModelPropertyDef } from "./model.js";
+import { ModelPropertyDef, renderValue } from "./model.js";
 import { BaseSymbol } from "./symbol.js";
-import { integerTypes } from "./built-in..js";
+import { integerTypes } from "./built-in.js";
 
 function emitValueUnion(name: string, doc: Optional<string>, type: string, variants: ValueUnionVariant[]): string {
   const variantName = (v: ValueUnionVariant) => {
@@ -104,7 +104,7 @@ function emitTypeUnion(
         switch typeCheck.${discriminator.goName} {${variants
           .map(
             (v) => `
-        case ${valueToGo(v.tag.value!)}:
+        case ${renderValue(v.tag.type)}:
           var v ${v.typeSymbol.goName}
           if err := json.Unmarshal(data, &v); err != nil {
             return nil, err

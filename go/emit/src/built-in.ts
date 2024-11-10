@@ -1,7 +1,18 @@
+import { ConstantValue } from "./common.js";
 import { BaseSymbol, SymbolTable } from "./symbol.js";
 
 export class BuiltInSymbol implements BaseSymbol {
   public readonly kind: "built-in" = "built-in";
+  public readonly namespace: "TypeSpec" = "TypeSpec";
+
+  public constructor(
+    public readonly name: string,
+    public readonly goName: string,
+  ) {}
+}
+
+export class BuiltInTemplate implements BaseSymbol {
+  public readonly kind: "built-in-template" = "built-in-template";
   public readonly namespace: "TypeSpec" = "TypeSpec";
 
   public constructor(
@@ -23,6 +34,8 @@ export const integerTypes = [
   new BuiltInSymbol("uint8", "uint8"),
 ];
 
+export const builtInTemplates = [new BuiltInTemplate("Array", "Array"), new BuiltInTemplate("Record", "Record")];
+
 export const builtInSymbols = [
   new BuiltInSymbol("numeric", "float64"),
   new BuiltInSymbol("float", "float64"),
@@ -39,8 +52,11 @@ export const builtInSymbols = [
   // new BuiltInSymbol("bytes", ""),
   new BuiltInSymbol("string", "string"),
   new BuiltInSymbol("boolean", "bool"),
+  ...builtInTemplates,
 ];
 
-export function addBuiltInSymbols<T extends BaseSymbol>(symbolTable: SymbolTable<T | BuiltInSymbol>) {
+export function addBuiltInSymbols<T extends BaseSymbol | BuiltInTemplate>(
+  symbolTable: SymbolTable<T | BuiltInSymbol | BuiltInTemplate>,
+) {
   builtInSymbols.forEach((s) => symbolTable.push(s));
 }

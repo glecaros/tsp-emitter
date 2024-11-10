@@ -52,4 +52,28 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles models with array of scalar fields", async () => {
+    const [input, expected] = await getTestData("with-array-scalar-field");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles models with array of model fields", async () => {
+    const [input, expected] = await getTestData("with-array-model-field");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles models with array of discriminated union fields", async () => {
+    const [input, expected] = await getTestData("with-array-discriminated-union-field");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles models with array of enum-like union fields (anonymous)", async () => {
+    const [input, expected] = await getTestData("with-array-anonymous-value-union");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });
