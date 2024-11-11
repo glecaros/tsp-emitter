@@ -76,4 +76,16 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles models that inherit from other models", async () => {
+    const [input, expected] = await getTestData("inheritance");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles models that inherit from other models that override fields from their parents", async () => {
+    const [input, expected] = await getTestData("inheritance-override");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });

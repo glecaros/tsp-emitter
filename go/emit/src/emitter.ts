@@ -80,7 +80,21 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         }
         const goName = getEncodedName(model, "text/x-go") || pascalCase(model.name);
         const doc = getDoc(model);
-        const symbol = new ModelSymbol(model.name, model.namespace?.name, goName, doc);
+        const parent = (() => {
+          if (model.baseModel !== undefined) {
+            const parent = symbolTable.find(model.baseModel.name, model.baseModel.namespace?.name);
+            if (parent === undefined) {
+              throw new Error(`Parent model ${model.baseModel.name} not found.`);
+            }
+            if (parent.kind !== "model") {
+              throw new Error(`Parent ${model.baseModel.name} is not a model.`);
+            }
+            return parent;
+          }
+          return undefined;
+        })();
+
+        const symbol = new ModelSymbol(model.name, model.namespace?.name, goName, doc, parent);
         symbolTable.push(symbol);
         scopes.push({ type: "model", symbol: symbol });
       },
@@ -406,9 +420,15 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     const shouldEmit = (s: Symbol): s is UnionSymbol | ModelSymbol =>
       ["model", "value_union", "type_union"].includes(s.kind);
 
-    const includes = namespace.symbols.filter(shouldEmit).flatMap(s => {
+    const includes = namespace.symbols.filter(shouldEmit).flatMap((s) => {
       if (s.kind === "model") {
-        return s.properties.map(p => p.type).filter(t => t.kind === "model").map(t => t.type as Symbol).filter(t => t.kind === "built-in").filter(t => t.include !== undefined).map(t => t.include!);
+        return s.properties
+          .map((p) => p.type)
+          .filter((t) => t.kind === "model")
+          .map((t) => t.type as Symbol)
+          .filter((t) => t.kind === "built-in")
+          .filter((t) => t.include !== undefined)
+          .map((t) => t.include!);
       } else {
         return [];
       }

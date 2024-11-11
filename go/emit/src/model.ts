@@ -75,12 +75,34 @@ export class ModelSymbol implements BaseSymbol {
     public namespace: Optional<string>,
     public goName: string,
     public doc: Optional<string>,
+    public parent: Optional<ModelSymbol>,
   ) {}
 
+  private getAllProperties(): ModelPropertyDef[] {
+    const parentProperties = this.parent !== undefined ? this.parent.getAllProperties() : [];
+    const mergedProperties = new Map<string, ModelPropertyDef>();
+
+    for (const prop of parentProperties) {
+      mergedProperties.set(prop.name, prop);
+    }
+
+    for (const prop of this.properties) {
+      mergedProperties.set(prop.name, prop);
+    }
+
+    return Array.from(mergedProperties.values());
+  }
+
   emit(): string {
+    const allProperties = this.getAllProperties();
     return stripIndent`
             ${this.doc !== undefined ? `// ${this.goName} ${this.doc}"}` : ""}
-            type ${this.goName} struct {${this.properties
+            type ${this.goName} struct {${
+              this.parent !== undefined
+                ? `
+                ${this.parent.goName}`
+                : ""
+            }${this.properties
               .filter((m) => m.type.kind !== "constant")
               .map((m) =>
                 m.doc !== undefined
@@ -106,7 +128,7 @@ export class ModelSymbol implements BaseSymbol {
                 var rawMsg map[string]json.RawMessage
                 if err := json.Unmarshal(data, &rawMsg); err != nil {
                     return err
-                }${this.properties
+                }${allProperties
                   .filter((m) => m.type.kind !== "constant")
                   .map(
                     (m) => `
@@ -121,7 +143,7 @@ export class ModelSymbol implements BaseSymbol {
             }
 
             func (m ${this.goName}) MarshalJSON() ([]byte, error) {
-                obj := map[string]interface{}{${this.properties
+                obj := map[string]interface{}{${allProperties
                   .filter((m) => !m.optional)
                   .map(
                     (m) => `
@@ -129,7 +151,7 @@ export class ModelSymbol implements BaseSymbol {
                   )
                   .join("")}
                 }
-                ${this.properties
+                ${allProperties
                   .filter((m) => m.optional)
                   .map(
                     (m) => `

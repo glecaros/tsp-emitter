@@ -8,7 +8,7 @@ export class BuiltInSymbol implements BaseSymbol {
   public constructor(
     public readonly name: string,
     public readonly goName: string,
-    public readonly include?: Optional<string>
+    public readonly include?: Optional<string>,
   ) {}
 }
 
