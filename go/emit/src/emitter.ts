@@ -406,9 +406,17 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     const shouldEmit = (s: Symbol): s is UnionSymbol | ModelSymbol =>
       ["model", "value_union", "type_union"].includes(s.kind);
 
+    const includes = namespace.symbols.filter(shouldEmit).flatMap(s => {
+      if (s.kind === "model") {
+        return s.properties.map(p => p.type).filter(t => t.kind === "model").map(t => t.type as Symbol).filter(t => t.kind === "built-in").filter(t => t.include !== undefined).map(t => t.include!);
+      } else {
+        return [];
+      }
+    });
+
     await program.host.writeFile(
       namespaceFile,
-      emitHeader(namespace.goName, ["encoding/json"]) +
+      emitHeader(namespace.goName, ["encoding/json", ...new Set(includes)]) +
         namespace.symbols
           .filter(shouldEmit)
           .map((s) => s.emit())

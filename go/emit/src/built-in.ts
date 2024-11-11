@@ -1,4 +1,4 @@
-import { ConstantValue } from "./common.js";
+import { Optional } from "./common.js";
 import { BaseSymbol, SymbolTable } from "./symbol.js";
 
 export class BuiltInSymbol implements BaseSymbol {
@@ -8,6 +8,7 @@ export class BuiltInSymbol implements BaseSymbol {
   public constructor(
     public readonly name: string,
     public readonly goName: string,
+    public readonly include?: Optional<string>
   ) {}
 }
 
@@ -48,7 +49,7 @@ export const builtInSymbols = [
   // new BuiltInSymbol("plainTime", ""),
   // new BuiltInSymbol("utcDateTime", ""),
   // new BuiltInSymbol("offsetDateTime", ""),
-  // new BuiltInSymbol("duration", ""),
+  new BuiltInSymbol("duration", "time.Duration", "time"),
   // new BuiltInSymbol("bytes", ""),
   new BuiltInSymbol("string", "string"),
   new BuiltInSymbol("boolean", "bool"),

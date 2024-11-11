@@ -22,7 +22,10 @@ export function stripIndent(strings: TemplateStringsArray, ...values: any[]): st
 export function emitHeader(packageName: string, imports: string[]): string {
   return stripIndent`
         package ${packageName}
-        ${imports
+        ${imports.length > 1 ? `
+        import (${imports.map(i => `
+            "${i}"`).join("")}
+        )` : imports
           .map(
             (i) => `
         import \"${i}\"`,
