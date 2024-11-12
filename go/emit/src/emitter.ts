@@ -8,6 +8,7 @@ import {
   Union,
   UnionVariant,
 } from "@typespec/compiler";
+import { createRekeyableMap } from "@typespec/compiler/utils";
 import { camelCase, pascalCase } from "change-case";
 import { emitHeader, getDiscriminator, getDoc, getEncodedName, getLiteralValue, supportedLiteral } from "./common.js";
 import { TypeUnionSymbol, UnionSymbol, ValueUnionSymbol } from "./union.js";
@@ -69,6 +70,41 @@ export async function $onEmit(context: EmitContext): Promise<void> {
 
   for (const namespace of namespaces.values()) {
     const scopes: Scope[] = [];
+    for (const [name, model] of namespace.typespecDefinition.models) {
+      const discriminator = getDiscriminator(model);
+      if (discriminator !== undefined) {
+        /* For inheritance based unions, we update the program to represent them as proper unions. */
+        const modelAsUnion = model as unknown as Union;
+        modelAsUnion.kind = "Union";
+        modelAsUnion.variants = createRekeyableMap<string, UnionVariant>([]);
+        for (const derivedModel of model.derivedModels) {
+          const properties = createRekeyableMap<string, ModelProperty>();
+          for (const [name, property] of model.properties) {
+            properties.set(name, { ...property, model: derivedModel });
+          }
+          for (const [name, property] of derivedModel.properties) {
+            properties.set(name, { ...property, model: derivedModel });
+          }
+          derivedModel.baseModel = undefined;
+          derivedModel.properties = properties;
+          const variant: UnionVariant = {
+            kind: "UnionVariant",
+            name: pascalCase(derivedModel.name),
+            entityKind: "Type",
+            decorators: [],
+            isFinished: true,
+            type: derivedModel,
+            projections: derivedModel.projections,
+            node: undefined,
+            union: modelAsUnion,
+            projectionsByName: derivedModel.projectionsByName,
+          };
+          modelAsUnion.variants.set(variant.name, variant);
+        }
+        namespace.typespecDefinition.unions.set(name, modelAsUnion);
+        namespace.typespecDefinition.models.delete(name);
+      }
+    }
     navigateTypesInNamespace(namespace.typespecDefinition, {
       model: (model: Model) => {
         if (model.name === undefined || model.name === "") {

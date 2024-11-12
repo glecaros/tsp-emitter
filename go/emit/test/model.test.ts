@@ -88,4 +88,16 @@ describe("model generation", () => {
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
+
+  it("handles inheritance-based unions", async () => {
+    const [input, expected] = await getTestData("inheritance-discriminator");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles inheritance-based unions and their use", async () => {
+    const [input, expected] = await getTestData("inheritance-discriminator-use");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
 });
