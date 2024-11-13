@@ -1,12 +1,12 @@
 namespace generalunion;
 
 union Name {
-    null;
-    string;
-    CompoundName;
+  null,
+  string,
+  CompoundName,
 }
 
 model CompoundName {
-    name: string;
-    secondName: string;
+  name: string;
+  secondName: string;
 }

@@ -1,5 +1,6 @@
 import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
 import { BaseSymbol } from "./symbol.js";
+import { UnionSymbol } from "./union.js";
 
 export interface TypeTemplateParameter {
   kind: "type";
@@ -49,14 +50,24 @@ function renderTemplateInstance(type: TemplateInstancePropertyType): string {
   throw new Error(`Unsupported template instance: ${type.template.name}`);
 }
 
-function renderPropertyType(type: PropertyType): string {
-  if (type.kind === "model") {
-    return type.type.goName;
-  } else if (type.kind === "constant") {
-    return type.type.goName;
-  } else {
-    return renderTemplateInstance(type);
+function renderPropertyType(property: ModelPropertyDef): string {
+  const { type, optional, nullable } = property;
+  const innerType = (() => {
+    if (type.kind === "model") {
+      return type.type.goName;
+    } else if (type.kind === "constant") {
+      return type.type.goName;
+    } else {
+      return renderTemplateInstance(type);
+    }
+  })();
+  if (nullable) {
+    return `Nullable[${innerType}]`;
   }
+  if (optional) {
+    return `*${innerType}`;
+  }
+  return innerType;
 }
 
 export function renderValue(type: PropertyType): string {
@@ -69,7 +80,7 @@ export function renderValue(type: PropertyType): string {
 
 export class ModelSymbol implements BaseSymbol {
   public readonly kind: "model" = "model";
-  public readonly properties: ModelPropertyDef[] = [];
+  private readonly properties: ModelPropertyDef[] = [];
 
   public constructor(
     public name: string,
@@ -79,7 +90,18 @@ export class ModelSymbol implements BaseSymbol {
     public parent: Optional<ModelSymbol>,
   ) {}
 
-  private getAllProperties(): ModelPropertyDef[] {
+  addProperty(property: ModelPropertyDef) {
+    const isUnion = (type: BaseSymbol): type is UnionSymbol =>
+      type.kind === "value_union" || type.kind === "type_union";
+    if (property.type.kind === "model" && isUnion(property.type.type)) {
+      if (property.type.type.nullable) {
+        property.nullable = true;
+      }
+    }
+    this.properties.push(property);
+  }
+
+  public getAllProperties(): ModelPropertyDef[] {
     const parentProperties = this.parent !== undefined ? this.parent.getAllProperties() : [];
     const mergedProperties = new Map<string, ModelPropertyDef>();
 
@@ -111,7 +133,7 @@ export class ModelSymbol implements BaseSymbol {
                 // ${m.goName} ${m.doc}`
                   : "" +
                     `
-                ${m.goName} ${m.optional ? "*" : ""}${renderPropertyType(m.type)}`,
+                ${m.goName} ${renderPropertyType(m)}`,
               )
               .join("")}
             }${this.properties
@@ -119,7 +141,7 @@ export class ModelSymbol implements BaseSymbol {
               .map(
                 (m) => `
 
-            func (m ${this.goName}) ${m.goName}() ${renderPropertyType(m.type)} {
+            func (m ${this.goName}) ${m.goName}() ${renderPropertyType(m)} {
                 return ${renderValue(m.type)}
             }`,
               )

@@ -11,6 +11,12 @@ describe("model generation", () => {
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });
 
+  it("handles models with duration fields", async () => {
+    const [input, expected] = await getTestData("duration");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
   it("handles models with references to other models", async () => {
     const [input, expected] = await getTestData("references");
     const results = await emit(input);
@@ -97,6 +103,18 @@ describe("model generation", () => {
 
   it("handles inheritance-based unions and their use", async () => {
     const [input, expected] = await getTestData("inheritance-discriminator-use");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles nullable fields (scalar)", async () => {
+    const [input, expected] = await getTestData("nullable-field-scalar");
+    const results = await emit(input);
+    expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
+  });
+
+  it("handles nullable fields (value )", async () => {
+    const [input, expected] = await getTestData("nullable-field-value-union");
     const results = await emit(input);
     expect(normalizeCode(results["modeltest/models.go"])).toBe(normalizeCode(expected));
   });

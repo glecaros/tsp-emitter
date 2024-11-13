@@ -10,7 +10,17 @@ import {
 } from "@typespec/compiler";
 import { createRekeyableMap } from "@typespec/compiler/utils";
 import { camelCase, pascalCase } from "change-case";
-import { emitHeader, emitNullable, getDiscriminator, getDoc, getEncodedName, getLiteralValue, getMetadata, storeMetadata, supportedLiteral } from "./common.js";
+import {
+  emitHeader,
+  emitNullable,
+  getDiscriminator,
+  getDoc,
+  getEncodedName,
+  getLiteralValue,
+  getMetadata,
+  storeMetadata,
+  supportedLiteral,
+} from "./common.js";
 import { TypeUnionSymbol, UnionSymbol, ValueUnionSymbol } from "./union.js";
 import { ModelSymbol, PropertyType } from "./model.js";
 import { BaseSymbol, SymbolTable } from "./symbol.js";
@@ -163,7 +173,9 @@ export async function $onEmit(context: EmitContext): Promise<void> {
       union: (union: Union) => {
         const parentScope = scopes[scopes.length - 1];
 
-        const nullVariant = [...union.variants.entries()].find(([_, v]) => v.type.kind === "Intrinsic" && v.type.name === "null");
+        const nullVariant = [...union.variants.entries()].find(
+          ([_, v]) => v.type.kind === "Intrinsic" && v.type.name === "null",
+        );
         if (nullVariant !== undefined) {
           union.variants.delete(nullVariant[0]);
         }
@@ -171,11 +183,13 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         if (union.name === undefined) {
           if (parentScope.type === "property") {
             if (union.variants.size === 1) {
-              /* Anonymous unions with a single can just be removed */
-              const variant = [...union.variants.values()][0];
-              parentScope.tspDef.type = variant.type;
-              storeMetadata(parentScope.tspDef, "nullable", "true");
-              return;
+              if (!supportedLiteral([...union.variants.values()][0].type)) {
+                /* Anonymous type unions with a single can just be removed */
+                const variant = [...union.variants.values()][0];
+                parentScope.tspDef.type = variant.type;
+                storeMetadata(parentScope.tspDef, "nullable", `${nullVariant !== undefined}`);
+                return;
+              }
             }
             const propertyName = parentScope.name;
             const modelName = parentScope.model.name;
@@ -192,7 +206,14 @@ export async function $onEmit(context: EmitContext): Promise<void> {
 
         const symbol =
           discriminator !== undefined
-            ? new TypeUnionSymbol(union.name, union.namespace?.name, goName, doc, discriminator, nullVariant !== undefined)
+            ? new TypeUnionSymbol(
+                union.name,
+                union.namespace?.name,
+                goName,
+                doc,
+                discriminator,
+                nullVariant !== undefined,
+              )
             : new ValueUnionSymbol(union.name, union.namespace?.name, goName, doc, nullVariant !== undefined);
 
         symbolTable.push(symbol);
@@ -320,7 +341,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             throw new Error("Unsupported type kind");
           })();
           const nullable = getMetadata(property, "nullable") === "true";
-          model.properties.push({
+          model.addProperty({
             name: property.name,
             goName,
             jsonName,
@@ -440,7 +461,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           if (variantType.kind !== "model") {
             throw new Error(`Expected a model symbol as type for the union variant ${variant.type.name}`);
           }
-          const discriminatorField = variantType.properties.find((p) => p.name === symbol.discriminatorName);
+          const discriminatorField = variantType.getAllProperties().find((p) => p.name === symbol.discriminatorName);
           if (discriminatorField === undefined) {
             throw new Error(`Could not find discriminator ${symbol.discriminatorName} in variant ${variantType.name}`);
           }
@@ -471,7 +492,8 @@ export async function $onEmit(context: EmitContext): Promise<void> {
 
     const includes = namespace.symbols.filter(shouldEmit).flatMap((s) => {
       if (s.kind === "model") {
-        return s.properties
+        return s
+          .getAllProperties()
           .map((p) => p.type)
           .filter((t) => t.kind === "model")
           .map((t) => t.type as Symbol)
@@ -485,18 +507,19 @@ export async function $onEmit(context: EmitContext): Promise<void> {
 
     const usesNullable = namespace.symbols.filter(shouldEmit).some((s) => {
       if (s.kind === "model") {
-        return s.properties.some((p) => p.nullable);
-      } else if ((s.kind === "value_union") || (s.kind === "type_union")) {
+        return s.getAllProperties().some((p) => p.nullable);
+      } else if (s.kind === "value_union" || s.kind === "type_union") {
         return s.nullable;
       } else {
-        return false
+        return false;
       }
-    })
+    });
 
     await program.host.writeFile(
       namespaceFile,
-      emitHeader(namespace.goName, ["encoding/json", ...new Set(includes)]) + "\n" +
-      (usesNullable ? emitNullable() + "\n" : "") +
+      emitHeader(namespace.goName, ["encoding/json", ...new Set(includes)]) +
+        "\n" +
+        (usesNullable ? emitNullable() + "\n" : "") +
         namespace.symbols
           .filter(shouldEmit)
           .map((s) => s.emit())
