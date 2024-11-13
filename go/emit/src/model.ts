@@ -39,6 +39,7 @@ export interface ModelPropertyDef {
   doc: Optional<string>;
   type: PropertyType;
   optional: boolean;
+  nullable: boolean;
 }
 
 function renderTemplateInstance(type: TemplateInstancePropertyType): string {

@@ -59,6 +59,7 @@ export class ValueUnionSymbol implements BaseSymbol {
     public namespace: Optional<string>,
     public goName: string,
     public doc: Optional<string>,
+    public nullable: boolean,
   ) {}
 
   checkAndSetType(type: BaseSymbol, fromLiteral: boolean): void {
@@ -144,6 +145,7 @@ export class TypeUnionSymbol implements BaseSymbol {
     public goName: string,
     public doc: Optional<string>,
     public discriminatorName: string,
+    public nullable: boolean,
   ) {}
 
   emit(): string {

@@ -10,7 +10,7 @@ import {
 } from "@typespec/compiler";
 import { createRekeyableMap } from "@typespec/compiler/utils";
 import { camelCase, pascalCase } from "change-case";
-import { emitHeader, getDiscriminator, getDoc, getEncodedName, getLiteralValue, supportedLiteral } from "./common.js";
+import { emitHeader, emitNullable, getDiscriminator, getDoc, getEncodedName, getLiteralValue, getMetadata, storeMetadata, supportedLiteral } from "./common.js";
 import { TypeUnionSymbol, UnionSymbol, ValueUnionSymbol } from "./union.js";
 import { ModelSymbol, PropertyType } from "./model.js";
 import { BaseSymbol, SymbolTable } from "./symbol.js";
@@ -56,6 +56,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
     type: "property";
     name: string;
     model: ModelSymbol;
+    tspDef: ModelProperty;
   }
   interface UnionScope {
     type: "union";
@@ -142,7 +143,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         if (parentScope.type !== "model") {
           throw new Error("Expected model scope");
         }
-        scopes.push({ type: "property", name: property.name, model: parentScope.symbol });
+        scopes.push({ type: "property", name: property.name, model: parentScope.symbol, tspDef: property });
         const { type } = property;
         if (type.kind === "Model") {
           /* Anonymous unions are not included in the traversal, here we name and add them */
@@ -161,8 +162,21 @@ export async function $onEmit(context: EmitContext): Promise<void> {
       },
       union: (union: Union) => {
         const parentScope = scopes[scopes.length - 1];
+
+        const nullVariant = [...union.variants.entries()].find(([_, v]) => v.type.kind === "Intrinsic" && v.type.name === "null");
+        if (nullVariant !== undefined) {
+          union.variants.delete(nullVariant[0]);
+        }
+
         if (union.name === undefined) {
           if (parentScope.type === "property") {
+            if (union.variants.size === 1) {
+              /* Anonymous unions with a single can just be removed */
+              const variant = [...union.variants.values()][0];
+              parentScope.tspDef.type = variant.type;
+              storeMetadata(parentScope.tspDef, "nullable", "true");
+              return;
+            }
             const propertyName = parentScope.name;
             const modelName = parentScope.model.name;
             const generatedName = `${camelCase(modelName)}${pascalCase(propertyName)}`;
@@ -171,20 +185,17 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             throw new Error("Anonymous union not contained in a property");
           }
         }
+
         const goName = getEncodedName(union, "text/x-go") || pascalCase(union.name);
         const doc = getDoc(union);
         const discriminator = getDiscriminator(union);
 
         const symbol =
           discriminator !== undefined
-            ? new TypeUnionSymbol(union.name, union.namespace?.name, goName, doc, discriminator)
-            : new ValueUnionSymbol(union.name, union.namespace?.name, goName, doc);
+            ? new TypeUnionSymbol(union.name, union.namespace?.name, goName, doc, discriminator, nullVariant !== undefined)
+            : new ValueUnionSymbol(union.name, union.namespace?.name, goName, doc, nullVariant !== undefined);
 
         symbolTable.push(symbol);
-        scopes.push({ type: "union", symbol: symbol });
-      },
-      exitUnion: (_: Union) => {
-        scopes.pop();
       },
     });
   }
@@ -213,7 +224,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         if (parentScope.type !== "model") {
           throw new Error("Expected model scope");
         }
-        scopes.push({ type: "property", name: property.name, model: parentScope.symbol });
+        scopes.push({ type: "property", name: property.name, model: parentScope.symbol, tspDef: property });
       },
       exitModelProperty: (property: ModelProperty) => {
         const scope = scopes.pop();
@@ -308,6 +319,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             }
             throw new Error("Unsupported type kind");
           })();
+          const nullable = getMetadata(property, "nullable") === "true";
           model.properties.push({
             name: property.name,
             goName,
@@ -315,6 +327,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             doc,
             type: propertyType,
             optional,
+            nullable,
           });
         }
       },
@@ -470,9 +483,20 @@ export async function $onEmit(context: EmitContext): Promise<void> {
       }
     });
 
+    const usesNullable = namespace.symbols.filter(shouldEmit).some((s) => {
+      if (s.kind === "model") {
+        return s.properties.some((p) => p.nullable);
+      } else if ((s.kind === "value_union") || (s.kind === "type_union")) {
+        return s.nullable;
+      } else {
+        return false
+      }
+    })
+
     await program.host.writeFile(
       namespaceFile,
-      emitHeader(namespace.goName, ["encoding/json", ...new Set(includes)]) +
+      emitHeader(namespace.goName, ["encoding/json", ...new Set(includes)]) + "\n" +
+      (usesNullable ? emitNullable() + "\n" : "") +
         namespace.symbols
           .filter(shouldEmit)
           .map((s) => s.emit())
