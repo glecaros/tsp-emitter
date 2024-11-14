@@ -484,8 +484,10 @@ export async function $onEmit(context: EmitContext): Promise<void> {
   }
 
   for (const namespace of namespaces.values()) {
-    const namespaceFile = `${context.emitterOutputDir}/${namespace.goName}/models.go`;
-    await program.host.mkdirp(`${context.emitterOutputDir}/${namespace.goName}`);
+    const packageDirectory = `${context.emitterOutputDir}/${namespace.goName}`;
+    await program.host.mkdirp(`${packageDirectory}`);
+    const modelsFile = `${packageDirectory}/models.go`;
+    const utilsFile = `${packageDirectory}/utils.go`;
 
     const shouldEmit = (s: Symbol): s is UnionSymbol | ModelSymbol =>
       ["model", "value_union", "type_union"].includes(s.kind);
@@ -505,25 +507,21 @@ export async function $onEmit(context: EmitContext): Promise<void> {
       }
     });
 
-    const usesNullable = namespace.symbols.filter(shouldEmit).some((s) => {
-      if (s.kind === "model") {
-        return s.getAllProperties().some((p) => p.nullable);
-      } else if (s.kind === "value_union" || s.kind === "type_union") {
-        return s.nullable;
-      } else {
-        return false;
-      }
-    });
-
     await program.host.writeFile(
-      namespaceFile,
+      modelsFile,
       emitHeader(namespace.goName, ["encoding/json", ...new Set(includes)]) +
         "\n" +
-        (usesNullable ? emitNullable() + "\n" : "") +
         namespace.symbols
           .filter(shouldEmit)
           .map((s) => s.emit())
           .join("\n\n"),
+    );
+
+    await program.host.writeFile(
+      utilsFile,
+      emitHeader(namespace.goName, ["encoding/json"]) +
+        "\n" +
+        emitNullable(),
     );
   }
 }
