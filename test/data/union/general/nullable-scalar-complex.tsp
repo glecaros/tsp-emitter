@@ -10,3 +10,7 @@ model CompoundName {
   name: string;
   secondName: string;
 }
+
+model Person {
+  name: Name;
+}

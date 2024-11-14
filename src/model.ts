@@ -1,6 +1,7 @@
+import { pascalCase } from "change-case";
 import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
 import { BaseSymbol } from "./symbol.js";
-import { UnionSymbol } from "./union.js";
+import { TypeUnionSymbol, UnionSymbol } from "./union.js";
 
 export interface TypeTemplateParameter {
   kind: "type";
@@ -48,6 +49,10 @@ function renderTemplateInstance(type: TemplateInstancePropertyType): string {
     return `[]${type.args[0].kind === "type" ? type.args[0].symbol.goName : valueToGo(type.args[0].value)}`;
   }
   throw new Error(`Unsupported template instance: ${type.template.name}`);
+}
+
+function isTypeUnion(type: PropertyType): type is ModelPropertyType {
+  return type.kind === "model" && type.type.kind === "type_union";
 }
 
 function renderPropertyType(property: ModelPropertyDef): string {
@@ -155,12 +160,16 @@ export class ModelSymbol implements BaseSymbol {
                   .filter((m) => m.type.kind !== "constant")
                   .map(
                     (m) => `
-                if v, ok := rawMsg["${m.name}"]; ok {
-                    if err := json.Unmarshal(v, &m.${m.goName}); err != nil {
+                if v, ok := rawMsg["${m.name}"]; ok {${isTypeUnion(m.type) ? `
+                    value, err := Unmarshal${pascalCase(m.goName)}(v)
+                    if err != nil {
                         return err
                     }
-                }`,
-                  )
+                    ${m.nullable ? `m.${m.goName} = SetNullable(value)` : `m.${m.goName} = value`}` : `
+                    if err := json.Unmarshal(v, &m.${m.goName}); err != nil {
+                        return err
+                    }`}
+                }`)
                   .join("")}
                 return nil
             }

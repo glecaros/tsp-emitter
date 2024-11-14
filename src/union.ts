@@ -1,4 +1,4 @@
-import { pascalCase } from "change-case";
+import { camelCase, pascalCase } from "change-case";
 import { ConstantValue, Optional, stripIndent, valueToGo } from "./common.js";
 import { ModelPropertyDef, renderValue } from "./model.js";
 import { BaseSymbol } from "./symbol.js";
@@ -81,7 +81,7 @@ export class ValueUnionSymbol implements BaseSymbol {
   }
 }
 
-function emitTypeUnion(
+function emitDiscriminatedTypeUnion(
   name: string,
   doc: Optional<string>,
   discriminator: DiscriminatorDef,
@@ -105,7 +105,7 @@ function emitTypeUnion(
         switch typeCheck.${discriminator.goName} {${variants
           .map(
             (v) => `
-        case ${renderValue(v.tag.type)}:
+        case ${renderValue(v.tag!.type)}:
           var v ${v.typeSymbol.goName}
           if err := json.Unmarshal(data, &v); err != nil {
             return nil, err
@@ -116,6 +116,36 @@ function emitTypeUnion(
           .join("")}
         }
         return result,  nil
+      }`;
+}
+
+function emitTypeUnion(name: string, doc: Optional<string>, variants: TypeUnionVariant[]): string {
+  return stripIndent`${doc !== undefined ? `
+      // ${name} ${doc}` : ""}
+      type ${name} interface {
+        Type() string
+      }
+      ${variants
+        .map(
+          (v) => `
+      type ${name}${pascalCase(v.goName)} struct {
+        Value ${v.typeSymbol.goName}
+      }
+
+      func (v ${name}${pascalCase(v.goName)}) Type() string {
+        return "${v.name}"
+      }
+      `).join("")}
+
+      func Unmarshal${pascalCase(name)}(data []byte) (${name}, error) {
+        var err error
+        ${variants.map(v => `
+        var ${camelCase(v.goName)} ${v.goName}
+        if err = json.Unmarshal(data, &${camelCase(v.goName)}); err == nil {
+          return ${name}${pascalCase(v.goName)}{Value: ${camelCase(v.goName)}}, nil
+        }
+        `).join("")}
+        return nil, err
       }`;
 }
 
@@ -131,7 +161,7 @@ export interface TypeUnionVariant {
   goName: string;
   doc: Optional<string>;
   typeSymbol: BaseSymbol;
-  tag: ModelPropertyDef;
+  tag?: ModelPropertyDef;
 }
 
 export class TypeUnionSymbol implements BaseSymbol {
@@ -144,15 +174,15 @@ export class TypeUnionSymbol implements BaseSymbol {
     public namespace: Optional<string>,
     public goName: string,
     public doc: Optional<string>,
-    public discriminatorName: string,
+    public discriminatorName: Optional<string>,
     public nullable: boolean,
   ) {}
 
   emit(): string {
     if (this.discriminator === undefined) {
-      throw new Error(`Could not resolve discriminator for ${this.name} union.`);
+      return emitTypeUnion(this.name, this.doc, this.variants);
     }
-    return emitTypeUnion(this.name, this.doc, this.discriminator, this.variants);
+    return emitDiscriminatedTypeUnion(this.name, this.doc, this.discriminator, this.variants);
   }
 }
 

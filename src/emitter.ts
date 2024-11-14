@@ -200,21 +200,76 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           }
         }
 
+        const scalars: Map<string | symbol, UnionVariant> = new Map();
+        const models: [string | symbol, UnionVariant][] = [];
+        const literals: Map<string, [string | symbol, UnionVariant][]> = new Map();
+        for (const [name, variant] of union.variants.entries()) {
+          if (variant.type.kind === "Scalar") {
+            scalars.set(name, variant);
+          } else if (variant.type.kind === "Model") {
+            models.push([name, variant]);
+          } else if (supportedLiteral(variant.type)) {
+            if (!literals.has(variant.type.kind)) {
+              literals.set(variant.type.kind, [[name, variant]]);
+            } else {
+              literals.get(variant.type.kind)?.push([name, variant]);
+            }
+          }
+        }
+
+        for (const [scalarName, scalarVariant] of [...scalars.entries()]) {
+          for (const literalType of literals.values()) {
+            const [_, literalVariant] = literalType[0];
+            const [assignable, _diag] = program.checker.isTypeAssignableTo(
+              literalVariant.type,
+              scalarVariant.type,
+              literalVariant.node?.symbol!,
+            );
+            if (assignable) {
+              literalType.push([scalarName, scalarVariant]);
+              scalars.delete(scalarName);
+              break;
+            }
+          }
+        }
+
+        const isValueUnion = models.length === 0 && scalars.size === 0 && literals.size === 1;
+
+        if (!isValueUnion) {
+
+          for (const [literalType, variants] of literals.entries()) {
+            variants.forEach(([name, _]) => union.variants.delete(name));
+            const newUnion = {
+              ...union,
+              name: `${union.name}${pascalCase(literalType)}Values`,
+              variants: createRekeyableMap<string | symbol, UnionVariant>(variants),
+            };
+            union.variants.set(newUnion.name, {
+              ...variants[0][1],
+              kind: "UnionVariant",
+              type: newUnion,
+              name: newUnion.name,
+            });
+            namespace.typespecDefinition.unions.set(newUnion.name, newUnion);
+          }
+        }
+        storeMetadata(union, "union_type", isValueUnion ? "values" : "types");
+
         const goName = getEncodedName(union, "text/x-go") || pascalCase(union.name);
         const doc = getDoc(union);
+
         const discriminator = getDiscriminator(union);
 
-        const symbol =
-          discriminator !== undefined
-            ? new TypeUnionSymbol(
-                union.name,
-                union.namespace?.name,
-                goName,
-                doc,
-                discriminator,
-                nullVariant !== undefined,
-              )
-            : new ValueUnionSymbol(union.name, union.namespace?.name, goName, doc, nullVariant !== undefined);
+        const symbol = isValueUnion
+          ? new ValueUnionSymbol(union.name, union.namespace?.name, goName, doc, nullVariant !== undefined)
+          : new TypeUnionSymbol(
+              union.name,
+              union.namespace?.name,
+              goName,
+              doc,
+              discriminator,
+              nullVariant !== undefined,
+            );
 
         symbolTable.push(symbol);
       },
@@ -369,17 +424,17 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           throw new Error("Expected union scope");
         }
         const { symbol } = scope;
-        if (symbol.kind === "type_union") {
+        if (symbol.kind === "type_union" && symbol.discriminatorName !== undefined) {
           const goNames = new Set<string>();
           const jsNames = new Set<string>();
           const types = new Set<BaseSymbol>();
           for (const variant of symbol.variants) {
-            if (variant.tag.type.kind !== "constant") {
-              throw new Error(`Discriminator ${variant.tag.name} must be a constant property.`);
+            if (variant.tag!.type.kind !== "constant") {
+              throw new Error(`Discriminator ${variant.tag!.name} must be a constant property.`);
             }
-            goNames.add(variant.tag.goName);
-            jsNames.add(variant.tag.name);
-            types.add(variant.tag.type.type);
+            goNames.add(variant.tag!.goName);
+            jsNames.add(variant.tag!.name);
+            types.add(variant.tag!.type.type);
           }
           if (goNames.size !== 1 || jsNames.size !== 1 || types.size !== 1) {
             throw new Error(
@@ -393,6 +448,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             type: types.values().next().value!,
           };
         }
+
         namespace.symbols.push(symbol);
       },
       unionVariant: (variant: UnionVariant) => {
@@ -434,10 +490,10 @@ export async function $onEmit(context: EmitContext): Promise<void> {
             throw new Error(`Unsupported union variant kind ${type.kind}`);
           }
         } else {
-          if (variant.type.kind !== "Model") {
+          if (variant.type.kind !== "Model" && variant.type.kind !== "Union" && variant.type.kind !== "Scalar") {
             throw new Error(`Types of kind ${variant.type.kind} are not supported for discriminated unions.`);
           }
-          scopes.push({ type: "union-variant", name: variant.type.name, union: parentScope.symbol });
+          scopes.push({ type: "union-variant", name: variant.type.name!, union: parentScope.symbol });
         }
       },
       exitUnionVariant: (variant: UnionVariant) => {
@@ -451,33 +507,46 @@ export async function $onEmit(context: EmitContext): Promise<void> {
         }
         const { symbol } = parentScope;
         if (symbol.kind === "type_union") {
-          if (variant.type.kind !== "Model") {
-            throw new Error(`Types of kind ${variant.type.kind} are not supported for discriminated unions.`);
+          if (variant.type.kind !== "Model" && variant.type.kind !== "Union" && variant.type.kind !== "Scalar") {
+            throw new Error(`Types of kind ${variant.type.kind} are not supported for unions.`);
           }
-          const variantType = symbolTable.find(variant.type.name, variant.type.namespace?.name);
+
+          const variantType = symbolTable.find(variant.type.name!, variant.type.namespace?.name);
           if (variantType === undefined) {
             throw new Error(`Type ${variant.type.name} not found.`);
           }
-          if (variantType.kind !== "model") {
-            throw new Error(`Expected a model symbol as type for the union variant ${variant.type.name}`);
-          }
-          const discriminatorField = variantType.getAllProperties().find((p) => p.name === symbol.discriminatorName);
-          if (discriminatorField === undefined) {
-            throw new Error(`Could not find discriminator ${symbol.discriminatorName} in variant ${variantType.name}`);
-          }
-          if (discriminatorField.type.kind !== "constant") {
-            throw new Error(
-              `Discriminator ${symbol.discriminatorName} in variant ${variantType.name} must be a constant property.`,
-            );
-          }
+          if (symbol.discriminator !== undefined) {
+            if (variant.type.kind !== "Model") {
+              throw new Error(`Types of kind ${variant.type.kind} are not supported for discriminated unions.`);
+            }
+            if (variantType.kind !== "model") {
+              throw new Error(`Expected a model symbol as type for the union variant ${variant.type.name}`);
+            }
+            const discriminatorField = variantType.getAllProperties().find((p) => p.name === symbol.discriminatorName);
+            if (discriminatorField === undefined) {
+              throw new Error(`Could not find discriminator ${symbol.discriminatorName} in variant ${variantType.name}`);
+            }
+            if (discriminatorField.type.kind !== "constant") {
+              throw new Error(
+                `Discriminator ${symbol.discriminatorName} in variant ${variantType.name} must be a constant property.`,
+              );
+            }
 
-          symbol.variants.push({
-            name: variantType.name,
-            goName: variantType.goName,
-            doc: getDoc(variant),
-            typeSymbol: variantType,
-            tag: discriminatorField,
-          });
+            symbol.variants.push({
+              name: variantType.name,
+              goName: variantType.goName,
+              doc: getDoc(variant),
+              typeSymbol: variantType,
+              tag: discriminatorField,
+            });
+          } else {
+            symbol.variants.push({
+              name: variantType.name,
+              goName: variantType.goName,
+              doc: getDoc(variant),
+              typeSymbol: variantType,
+            });
+          }
         }
       },
     });
@@ -517,11 +586,6 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           .join("\n\n"),
     );
 
-    await program.host.writeFile(
-      utilsFile,
-      emitHeader(namespace.goName, ["encoding/json"]) +
-        "\n" +
-        emitNullable(),
-    );
+    await program.host.writeFile(utilsFile, emitHeader(namespace.goName, ["encoding/json"]) + "\n" + emitNullable());
   }
 }
