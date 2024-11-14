@@ -44,3 +44,7 @@ func (o *Nullable[T]) UnmarshalJSON(data []byte) error {
 	o.isSet = true
 	return json.Unmarshal(data, &o.value)
 }
+
+func Ptr[T any](v T) *T {
+	return &v
+}

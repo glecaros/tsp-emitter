@@ -13,6 +13,7 @@ import { camelCase, pascalCase } from "change-case";
 import {
   emitHeader,
   emitNullable,
+  emitPtr,
   getDiscriminator,
   getDoc,
   getEncodedName,
@@ -515,7 +516,7 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           if (variantType === undefined) {
             throw new Error(`Type ${variant.type.name} not found.`);
           }
-          if (symbol.discriminator !== undefined) {
+          if (symbol.discriminatorName !== undefined) {
             if (variant.type.kind !== "Model") {
               throw new Error(`Types of kind ${variant.type.kind} are not supported for discriminated unions.`);
             }
@@ -586,6 +587,6 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           .join("\n\n"),
     );
 
-    await program.host.writeFile(utilsFile, emitHeader(namespace.goName, ["encoding/json"]) + "\n" + emitNullable());
+    await program.host.writeFile(utilsFile, emitHeader(namespace.goName, ["encoding/json"]) + "\n" + emitNullable() + "\n" + emitPtr());
   }
 }

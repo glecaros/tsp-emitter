@@ -89,6 +89,13 @@ export function emitNullable(): string {
         }`;
 }
 
+export function emitPtr(): string {
+  return stripIndent`
+        func Ptr[T any](v T) *T {
+            return &v
+        }`
+}
+
 export type Optional<T> = T | undefined;
 
 interface Decorated {
