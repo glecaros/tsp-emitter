@@ -4,7 +4,7 @@ import path from "path";
 export function normalizeCode(code: string): string {
   return code
     .replace(/\r\n/g, "\n")
-    .replace(/\s+/g, " ")
+    .replace(/\S+/g, " ")
     .split("\n")
     .filter((line) => line.trim().length > 0)
     .map((line) => line.trimEnd())

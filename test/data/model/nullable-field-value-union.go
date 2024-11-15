@@ -67,9 +67,13 @@ func (m *HasNullableValueUnionFields) UnmarshalJSON(data []byte) error {
 }
 
 func (m HasNullableValueUnionFields) MarshalJSON() ([]byte, error) {
-	obj := map[string]interface{}{
-		"singleValue":    m.SingleValue,
-		"multipleValues": m.MultipleValues,
+	obj := map[string]interface{}{}
+
+	if m.SingleValue.IsSet() {
+		obj["singleValue"] = m.SingleValue
+	}
+	if m.MultipleValues.IsSet() {
+		obj["multipleValues"] = m.MultipleValues
 	}
 
 	return json.Marshal(obj)

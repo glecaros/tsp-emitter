@@ -194,13 +194,18 @@ export class ModelSymbol implements BaseSymbol {
 
             func (m ${this.goName}) MarshalJSON() ([]byte, error) {
                 obj := map[string]interface{}{${allProperties
-                  .filter((m) => !m.optional)
+                  .filter((m) => !m.optional && !m.nullable)
                   .map(
                     (m) => `
                     "${m.jsonName}": ${renderSerializationValue(m)},`,
                   )
                   .join("")}
                 }
+                ${allProperties.filter((m) => m.nullable).map(
+                  (m) => `
+                if m.${m.goName}.IsSet() {
+                    obj["${m.jsonName}"] = ${renderSerializationValue(m)}
+                }`).join("")}
                 ${allProperties
                   .filter((m) => m.optional)
                   .map(

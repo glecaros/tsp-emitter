@@ -22,8 +22,10 @@ func (m *HasScalarNullable) UnmarshalJSON(data []byte) error {
 }
 
 func (m HasScalarNullable) MarshalJSON() ([]byte, error) {
-	obj := map[string]interface{}{
-		"scalarNullableField": m.ScalarNullableField,
+	obj := map[string]interface{}{}
+
+	if m.ScalarNullableField.IsSet() {
+		obj["scalarNullableField"] = m.ScalarNullableField
 	}
 
 	return json.Marshal(obj)
