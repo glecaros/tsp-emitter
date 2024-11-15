@@ -9,6 +9,8 @@ export class BuiltInSymbol implements BaseSymbol {
     public readonly name: string,
     public readonly goName: string,
     public readonly include?: Optional<string>,
+    public readonly serializeFunction?: Optional<string>,
+    public readonly deserializeFunction?: Optional<string>,
   ) {}
 }
 
@@ -49,7 +51,7 @@ export const builtInSymbols = [
   // new BuiltInSymbol("plainTime", ""),
   // new BuiltInSymbol("utcDateTime", ""),
   // new BuiltInSymbol("offsetDateTime", ""),
-  new BuiltInSymbol("duration", "time.Duration", "time"),
+  new BuiltInSymbol("duration", "time.Duration", "time", "serializeDurationInternal", "unmarshalDurationInternal"),
   // new BuiltInSymbol("bytes", ""),
   new BuiltInSymbol("string", "string"),
   new BuiltInSymbol("boolean", "bool"),

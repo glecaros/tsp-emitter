@@ -96,6 +96,29 @@ export function emitPtr(): string {
         }`
 }
 
+export function emitSerializationHelpers(): string {
+  return stripIndent`
+        func serializeDurationInternal(v time.Duration) string {
+          return v.String()
+        }
+
+        func unmarshalDurationInternal(data []byte, duration *time.Duration) error {
+          var durationString string
+          if err := json.Unmarshal(data, &durationString); err != nil {
+            return err
+          }
+
+          var v time.Duration
+          var err error
+          if v, err = time.ParseDuration(durationString); err != nil {
+            return err
+          }
+          *duration = v
+
+          return nil
+        }`;
+}
+
 export type Optional<T> = T | undefined;
 
 interface Decorated {

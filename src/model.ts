@@ -83,6 +83,24 @@ export function renderValue(type: PropertyType): string {
   }
 }
 
+function renderSerializationValue(property: ModelPropertyDef): string {
+  if (property.type.kind === "constant") {
+    return valueToGo(property.type.value);
+  } else if ((property.type.kind === "model") && (property.type.type as any).serializeFunction) {
+    return `${(property.type.type as any).serializeFunction}(m.${property.goName})`;
+  } else {
+    return `m.${property.goName}`;
+  }
+}
+
+function renderDeserializationFunction(property: ModelPropertyDef): string {
+  if ((property.type.kind === "model") && (property.type.type as any).deserializeFunction) {
+    return `${(property.type.type as any).deserializeFunction}`;
+  } else {
+    return "json.Unmarshal";
+  }
+}
+
 export class ModelSymbol implements BaseSymbol {
   public readonly kind: "model" = "model";
   private readonly properties: ModelPropertyDef[] = [];
@@ -166,7 +184,7 @@ export class ModelSymbol implements BaseSymbol {
                         return err
                     }
                     ${m.nullable ? `m.${m.goName} = SetNullable(value)` : `m.${m.goName} = value`}` : `
-                    if err := json.Unmarshal(v, &m.${m.goName}); err != nil {
+                    if err := ${renderDeserializationFunction(m)}(v, &m.${m.goName}); err != nil {
                         return err
                     }`}
                 }`)
@@ -179,7 +197,7 @@ export class ModelSymbol implements BaseSymbol {
                   .filter((m) => !m.optional)
                   .map(
                     (m) => `
-                    "${m.jsonName}": ${m.type.kind === "constant" ? valueToGo(m.type.value) : `m.${m.goName}`},`,
+                    "${m.jsonName}": ${renderSerializationValue(m)},`,
                   )
                   .join("")}
                 }
@@ -188,7 +206,7 @@ export class ModelSymbol implements BaseSymbol {
                   .map(
                     (m) => `
                 if m.${m.goName} != nil {
-                    obj["${m.jsonName}"] = m.${m.goName}
+                    obj["${m.jsonName}"] = ${renderSerializationValue(m)}
                 }`,
                   )
                   .join("")}

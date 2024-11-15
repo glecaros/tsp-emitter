@@ -14,6 +14,7 @@ import {
   emitHeader,
   emitNullable,
   emitPtr,
+  emitSerializationHelpers,
   getDiscriminator,
   getDoc,
   getEncodedName,
@@ -587,6 +588,6 @@ export async function $onEmit(context: EmitContext): Promise<void> {
           .join("\n\n"),
     );
 
-    await program.host.writeFile(utilsFile, emitHeader(namespace.goName, ["encoding/json"]) + "\n" + emitNullable() + "\n" + emitPtr());
+    await program.host.writeFile(utilsFile, emitHeader(namespace.goName, ["encoding/json", "time"]) + "\n" + emitNullable() + "\n" + emitPtr() + "\n" + emitSerializationHelpers());
   }
 }
