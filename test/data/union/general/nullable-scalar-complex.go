@@ -92,8 +92,10 @@ func (m *Person) UnmarshalJSON(data []byte) error {
 }
 
 func (m Person) MarshalJSON() ([]byte, error) {
-	obj := map[string]interface{}{
-		"name": m.Name,
+	obj := map[string]interface{}{}
+
+	if m.Name.IsSet() {
+		obj["name"] = m.Name
 	}
 
 	return json.Marshal(obj)
